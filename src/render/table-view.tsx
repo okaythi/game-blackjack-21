@@ -78,8 +78,8 @@ export function TableView({
       <main
         style={{
           width: '100%',
-          aspectRatio: '16 / 7.2',
-          maxHeight: 'min(430px, calc(100vh - 200px))',
+          aspectRatio: '16 / 7.4',
+          maxHeight: 'min(440px, calc(100vh - 200px))',
           background: 'radial-gradient(ellipse at 50% 12%, #ece4d4 0%, #ded4c0 60%, #c4b798 100%)',
           borderRadius: '14px 14px 220px 220px',
           border: '7px solid #332014', // Mahogany / leather padded armrest rail
@@ -90,7 +90,7 @@ export function TableView({
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
-          padding: '10px 14px 14px',
+          padding: '10px 16px 20px',
           boxSizing: 'border-box',
         }}
       >
@@ -179,25 +179,48 @@ export function TableView({
             justifyContent: 'space-around',
             alignItems: 'flex-end',
             width: '100%',
-            maxWidth: '820px',
+            maxWidth: seats.length >= 4 ? '770px' : '820px',
             margin: '0 auto',
             zIndex: 10,
-            gap: '8px',
+            gap: '6px',
+            padding: '0 16px',
+            boxSizing: 'border-box',
           }}
         >
-          {seats.map((seat) => {
+          {seats.map((seat, seatIdx) => {
             const isTurn = phase === 'player_turns' && activeSeatIndex === seat.index
+
+            // Dynamic arc vertical offset:
+            // Semicircular blackjack tables curve upward towards the dealer at the flanks.
+            // Raising the outer seats follows the natural table curve and prevents
+            // badges from being clipped by the curved table rail.
+            const center = (seats.length - 1) / 2
+            const distFromCenter = Math.abs(seatIdx - center)
+            const maxDist = center > 0 ? center : 1
+            const normDist = distFromCenter / maxDist
+
+            // Lift: 0px at center up to ~38px on the extreme outer flanks in 4-player mode
+            const maxLift = seats.length >= 4 ? 38 : seats.length === 3 ? 24 : 14
+            const arcLift = Math.round(maxLift * Math.pow(normDist, 1.5))
+
             return (
-              <SeatView
+              <div
                 key={seat.id}
-                seat={seat}
-                isTurn={isTurn}
-                isMiddleHuman={seat.isHuman}
-                pendingBet={currentBet}
-                onDropChip={onDropChip}
-                onClickBetSpot={onClickBetSpot}
-                phase={phase}
-              />
+                style={{
+                  marginBottom: `${arcLift}px`,
+                  transition: 'margin-bottom 0.25s ease',
+                }}
+              >
+                <SeatView
+                  seat={seat}
+                  isTurn={isTurn}
+                  isMiddleHuman={seat.isHuman}
+                  pendingBet={currentBet}
+                  onDropChip={onDropChip}
+                  onClickBetSpot={onClickBetSpot}
+                  phase={phase}
+                />
+              </div>
             )
           })}
         </div>
