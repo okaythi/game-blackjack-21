@@ -72,7 +72,7 @@ export interface DealerHand {
 
 export type DealerState = DealerHand
 
-export type DifficultyTier = 'easy' | 'normal' | 'expert'
+export type DifficultyTier = 'easy' | 'normal' | 'hard' | 'expert'
 
 export type ChipDenomination =
   | 1

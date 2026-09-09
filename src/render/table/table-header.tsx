@@ -52,27 +52,35 @@ export function TableHeader({
         </span>
         <span style={{ color: '#52525b' }}>•</span>
         <span style={{ color: '#a1a1aa' }}>Tier:</span>
-        {(['easy', 'normal', 'expert'] as const).map((tier) => (
-          <button
-            key={tier}
-            type="button"
-            disabled={!canModifyTable}
-            onClick={() => onSelectDifficulty(tier)}
-            style={{
-              background: difficulty === tier ? '#d97706' : 'rgba(255,255,255,0.06)',
-              color: difficulty === tier ? '#ffffff' : '#a1a1aa',
-              border: 'none',
-              borderRadius: '4px',
-              padding: '2px 6px',
-              fontSize: '10.5px',
-              fontWeight: 700,
-              cursor: canModifyTable ? 'pointer' : 'not-allowed',
-              textTransform: 'capitalize',
-            }}
-          >
-            {tier}
-          </button>
-        ))}
+        {([
+          { id: 'easy', label: 'Easy', title: 'Easy Mode (~0.2% edge): 3:2 BJ, S17, Double Any Two, DAS, Late Surrender' },
+          { id: 'normal', label: 'Normal', title: 'Normal Mode (~0.5% edge): 3:2 BJ, S17, 6-Deck Shoe, DAS, No Surrender' },
+          { id: 'hard', label: 'Hard', title: 'Hard Mode (~2.0%+ edge): 6:5 BJ, H17, Double 9-11 only, No Resplit Aces' },
+        ] as const).map((tier) => {
+          const isActive = difficulty === tier.id || (tier.id === 'hard' && difficulty === 'expert')
+          return (
+            <button
+              key={tier.id}
+              type="button"
+              title={tier.title}
+              disabled={!canModifyTable}
+              onClick={() => onSelectDifficulty(tier.id)}
+              style={{
+                background: isActive ? '#d97706' : 'rgba(255,255,255,0.06)',
+                color: isActive ? '#ffffff' : '#a1a1aa',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '2px 6px',
+                fontSize: '10.5px',
+                fontWeight: 700,
+                cursor: canModifyTable ? 'pointer' : 'not-allowed',
+                textTransform: 'capitalize',
+              }}
+            >
+              {tier.label}
+            </button>
+          )
+        })}
       </div>
 
       {/* Right: Companions, Turbo, Audio & Cash Out */}

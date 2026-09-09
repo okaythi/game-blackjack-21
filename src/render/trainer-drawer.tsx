@@ -17,7 +17,7 @@ export function TrainerDrawer({
   defaultOpen = false,
 }: TrainerDrawerProps) {
   // If Hard/Expert, strictly disabled
-  if (tier === 'expert') {
+  if (tier === 'expert' || tier === 'hard') {
     return null
   }
 

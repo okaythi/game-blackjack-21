@@ -51,6 +51,7 @@ export function calculateAIDeliberationMs(
       minMs = 500
       maxMs = 750
       break
+    case 'hard':
     case 'expert':
       if (isMarginalDecision) {
         minMs = 1800

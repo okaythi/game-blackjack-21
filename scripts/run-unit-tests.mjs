@@ -422,6 +422,39 @@ async function runAllTests() {
     assertEqual(depositedAt650.candiesReturn, 450, '€150 cashout returns 450 candies')
   }
 
+  // ----------------------------------------------------
+  // TEST SUITE 10: Difficulty Tier Rule Specifications
+  // ----------------------------------------------------
+  console.log('\n--- Suite 10: Difficulty Tier Rule Specifications ---')
+  {
+    // 1. Easy Mode (Player-Friendly Rules / House Edge ~0.2%)
+    const easy = TABLE_RULES.easy
+    assertEqual(easy.blackjackPayoutRatio, 1.5, 'Easy: Blackjack pays 3:2')
+    assertEqual(easy.dealerHitsSoft17, false, 'Easy: Dealer stands on all 17s (S17)')
+    assertEqual(easy.doubleAllowedOn, 'any', 'Easy: Double Down allowed on any two cards')
+    assertEqual(easy.doubleAfterSplit, true, 'Easy: Double After Split (DAS) permitted')
+    assertEqual(easy.lateSurrender, true, 'Easy: Late surrender enabled')
+
+    // 2. Normal Mode (Standard Authentic Rules / House Edge ~0.5%)
+    const normal = TABLE_RULES.normal
+    assertEqual(normal.deckCount, 6, 'Normal: Standard 6-deck shoe')
+    assertEqual(normal.cutCardPenetration, 0.75, 'Normal: Standard cut-card penetration')
+    assertEqual(normal.dealerHitsSoft17, false, 'Normal: Dealer stands on all 17s')
+    assertEqual(normal.doubleAfterSplit, true, 'Normal: DAS allowed')
+    assertEqual(normal.lateSurrender, false, 'Normal: No surrender')
+
+    // 3. Hard Mode (Vegas Strip / Unfavourable House Edge ~2.0%+)
+    const hard = TABLE_RULES.hard
+    assertEqual(hard.dealerHitsSoft17, true, 'Hard: Dealer hits on Soft 17 (H17)')
+    assertEqual(hard.blackjackPayoutRatio, 1.2, 'Hard: Blackjack pays 6:5 instead of 3:2')
+    // 10-Candy bet natural BJ payout test:
+    const bet10NaturalPayout = 10 * hard.blackjackPayoutRatio
+    assertEqual(bet10NaturalPayout, 12, 'Hard: On 10-Candy bet, natural pays 12 Candies instead of 15 (6:5)')
+    assertEqual(hard.doubleAllowedOn, '9-11', 'Hard: Doubling restricted strictly to 9, 10, or 11')
+    assertEqual(hard.resplitAces, false, 'Hard: No re-splitting Aces')
+    assertEqual(hard.lateSurrender, false, 'Hard: No surrender')
+  }
+
   console.log('\n====================================================')
   console.log(`  ALL TESTS PASSED! (${passedTests}/${totalTests} assertions)`)
   console.log('====================================================\n')
