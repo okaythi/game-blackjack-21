@@ -273,26 +273,16 @@ export function SeatView({
         title={canInteract ? 'Drop chips or click to wager' : undefined}
       >
         {displayBet > 0 ? (
-          <div
+          <span
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              lineHeight: 1.1,
+              fontWeight: 800,
+              fontSize: '11px',
+              color: '#18181b',
+              letterSpacing: '-0.2px',
             }}
           >
-            <span style={{ fontSize: '10px' }}>🪙</span>
-            <span
-              style={{
-                fontWeight: 800,
-                fontSize: '10.5px',
-                color: '#18181b',
-                marginTop: '1px',
-              }}
-            >
-              €{displayBet}
-            </span>
-          </div>
+            €{displayBet}
+          </span>
         ) : (
           <span
             style={{
