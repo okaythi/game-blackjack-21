@@ -44,70 +44,62 @@ export function calculateCardCounterBet(
   trueCount: number,
   bankroll: number,
   tableMinBet: number = 10,
-  tier: string = 'normal',
+  _tier: string = 'normal',
 ): number {
-  const baseMin = Math.max(tableMinBet, profile.baseMinBet || (tier === 'expert' ? 50 : 25))
+  const min = Math.max(10, tableMinBet)
+  const baseUnit = Math.max(min, profile.baseMinBet || 15)
 
-  if (bankroll <= baseMin) {
-    return Math.max(tableMinBet, Math.min(bankroll, baseMin))
+  if (bankroll <= min) {
+    return Math.min(bankroll, min)
   }
 
-  // Dynamic unit sizing: scales as bankroll compounds (1 unit = ~2.5% of bankroll, min table base)
-  const bankrollUnit = Math.floor(bankroll / 40 / 25) * 25
-  const dynamicUnit = Math.max(baseMin, bankrollUnit || baseMin)
+  // Unit sizing: starts at companion's distinct base unit (e.g. 15, 20, 25)
+  // Compounds only if bankroll expands from substantial profits (> 120 units)
+  let unit = baseUnit
+  if (bankroll > baseUnit * 120) {
+    unit = Math.max(baseUnit, Math.round((bankroll * 0.01) / 5) * 5)
+  }
+  unit = Math.min(unit, Math.max(baseUnit, Math.floor(bankroll * 0.05)))
 
-  // Baseline house edge: ~ -0.5% on 3:2, ~ -1.9% on 6:5 (hard/expert)
-  const baselineEdge = tier === 'hard' || tier === 'expert' ? -0.019 : -0.005
-  // Each +1 True Count shifts edge by ~ +0.51%
-  const playerAdvantage = baselineEdge + 0.0051 * trueCount
+  // Sensitivity from companion profile (e.g. 0.8 to 1.8)
+  const sensitivity = Math.max(0.7, profile.countSensitivity || 1.0)
 
-  // When house has the mathematical edge (playerAdvantage <= 0 or TC <= +1.0):
-  // AGI bets strictly the 1-unit minimum. Never over-bets when negative expectation.
-  if (playerAdvantage <= 0 || trueCount <= 1.0) {
-    return Math.min(bankroll, dynamicUnit)
+  let multiplier = 1.0
+
+  if (trueCount <= -1.0) {
+    // Negative count (house edge heavy):
+    // AGI drops strictly to table minimum to minimize negative expectation.
+    return min
+  } else if (trueCount <= 0.2) {
+    // Neutral count: bets standard 1 base unit
+    multiplier = 1.0
+  } else {
+    // Advantage count (True Count > 0):
+    // Optimal Kelly spread ramps smoothly with count
+    // TC 1 -> ~2x, TC 2 -> ~3.5x, TC 3 -> ~5.5x, TC 4 -> ~8x, TC 5 -> ~11x, TC 6+ -> ~14x-16x
+    const rawSpread = 1.0 + Math.pow(trueCount, 1.35) * 1.25 * sensitivity
+    multiplier = Math.max(1.0, Math.min(16.0, rawSpread))
   }
 
-  // When player has mathematical advantage (EV+):
-  // Half-Kelly optimal unit spread:
-  // TC 1.5 - 2.5: 2 units
-  // TC 2.5 - 3.5: 4 units
-  // TC 3.5 - 4.5: 6 units
-  // TC 4.5 - 5.5: 8 units
-  // TC >= 5.5: 12 units
-  let units = 1
-  if (trueCount >= 5.5) {
-    units = 12
-  } else if (trueCount >= 4.5) {
-    units = 8
-  } else if (trueCount >= 3.5) {
-    units = 6
-  } else if (trueCount >= 2.5) {
-    units = 4
-  } else if (trueCount >= 1.5) {
-    units = 2
-  }
+  const rawBet = Math.round(unit * multiplier)
 
-  const sensitivity = Math.max(0.8, profile.countSensitivity || 1.0)
-  const spreadUnits = Math.round(units * sensitivity)
-  const rawBet = dynamicUnit * spreadUnits
-
-  // Risk-of-ruin cap: max 20% of bankroll or table max 5000
-  const maxSafeBet = Math.max(dynamicUnit, Math.floor(bankroll * 0.2))
-  const clampedBet = Math.min(bankroll, Math.min(5000, Math.min(rawBet, maxSafeBet)))
+  // Risk-of-ruin protection: maximum bet cannot exceed 20% of current bankroll
+  const maxSafeBet = Math.max(unit, Math.floor(bankroll * 0.20))
+  const clamped = Math.max(min, Math.min(bankroll, Math.min(5000, Math.min(rawBet, maxSafeBet))))
 
   // Round to clean casino chip denominations
-  let rounded = clampedBet
-  if (clampedBet >= 300) {
-    rounded = Math.round(clampedBet / 100) * 100
-  } else if (clampedBet >= 100) {
-    rounded = Math.round(clampedBet / 50) * 50
-  } else if (clampedBet >= 25) {
-    rounded = Math.round(clampedBet / 25) * 25
+  let rounded = clamped
+  if (clamped >= 250) {
+    rounded = Math.round(clamped / 50) * 50
+  } else if (clamped >= 100) {
+    rounded = Math.round(clamped / 25) * 25
+  } else if (clamped >= 30) {
+    rounded = Math.round(clamped / 10) * 10
   } else {
-    rounded = Math.round(clampedBet / 5) * 5
+    rounded = Math.round(clamped / 5) * 5
   }
 
-  return Math.max(tableMinBet, Math.min(bankroll, rounded))
+  return Math.max(min, Math.min(bankroll, rounded))
 }
 
 /**

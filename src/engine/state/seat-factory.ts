@@ -42,7 +42,7 @@ export function createTableSeats(options: SeatInitializationOptions): Seat[] {
       companionIdCounter++
 
       const profile = buildAIProfile(identity, difficulty, i)
-      const startingBankroll = profile.baseMinBet * 40
+      const startingBankroll = profile.baseMinBet * (difficulty === 'easy' ? 40 : 70)
 
       seats.push({
         id: profile.id,

@@ -488,27 +488,37 @@ async function runAllTests() {
     const telemetryAdvantageModerate = { trueCount: 3.0, runningCount: 12, decksRemaining: 4, cardsDealt: 104 }
     const telemetryAdvantageHigh = { trueCount: 6.0, runningCount: 24, decksRemaining: 4, cardsDealt: 104 }
 
-    // When house has the mathematical edge (TC <= 1), bets strictly base minimum (1 unit)
+    // When count is negative (TC <= -1.0), AGI drops to table minimum €10 to preserve bankroll
     const betNeg = calculateCardCounterBet(expertProfile, telemetryNegative.trueCount, 1000, 10, 'expert')
-    const betNeutral = calculateCardCounterBet(expertProfile, telemetryNeutral.trueCount, 1000, 10, 'expert')
-    assertEqual(betNeg, 50, 'AGI bets 1 base unit (€50 for expert) when true count is negative')
-    assertEqual(betNeutral, 50, 'AGI bets 1 base unit when true count is <= 1.0')
+    assertEqual(betNeg, 10, 'AGI drops to table minimum €10 when count is negative (EV-)')
 
-    // When player has advantage, bets scale with Kelly spread
-    // In normal mode (3:2 payout), TC +3 gives ~ +1.03% player advantage (EV+)
+    // When count is neutral (TC 0), bets 1 base unit
+    const betNeutral = calculateCardCounterBet(expertProfile, 0, 1000, 10, 'expert')
+    assert(betNeutral >= 10 && betNeutral <= 25, `AGI bets base unit on neutral count (got €${betNeutral})`)
+
+    // When count is positive (TC +3.0), bets scale with Kelly spread
     const normalProfile = buildAIProfile({ name: 'Kenji', code: 'JP', country: 'Japan' }, 'normal', 0)
     const betModNormal = calculateCardCounterBet(normalProfile, telemetryAdvantageModerate.trueCount, 1000, 10, 'normal')
-    assert(betModNormal >= 50, `AGI ramps bet at TC +3 in 3:2 normal mode (got €${betModNormal}, expected >= €50)`)
-    assert(betModNormal % 25 === 0, `AGI bet €${betModNormal} is rounded to clean casino chip denomination`)
+    assert(betModNormal >= 50, `AGI ramps bet at TC +3 (got €${betModNormal}, expected >= €50)`)
+    assert(betModNormal % 5 === 0, `AGI bet €${betModNormal} is rounded to clean casino chip denomination`)
 
-    // In expert mode (6:5 payout), TC +6 overcomes heavy house edge and ramps high
+    // When count is super hot (TC +6.0), ramps high but respects risk-of-ruin cap (<= 20% bankroll)
     const betHighExpert = calculateCardCounterBet(expertProfile, telemetryAdvantageHigh.trueCount, 1000, 10, 'expert')
     assert(betHighExpert >= 100, `AGI ramps higher at TC +6 in expert mode (got €${betHighExpert}, expected >= €100)`)
     assert(betHighExpert <= 200, `AGI never exceeds 20% risk-of-ruin cap on €1000 bankroll (got €${betHighExpert})`)
 
+    // Dynamic Companion diversity: companions at seat 0 and seat 2 have distinct bets at neutral count
+    const comp0 = buildAIProfile({ name: 'Astrid', code: 'SE', country: 'Sweden' }, 'hard', 0)
+    const comp2 = buildAIProfile({ name: 'Mateo', code: 'ES', country: 'Spain' }, 'hard', 2)
+    const betComp0 = calculateCardCounterBet(comp0, 0, 1500, 10, 'hard')
+    const betComp2 = calculateCardCounterBet(comp2, 0, 1500, 10, 'hard')
+    assert(betComp0 !== betComp2, `Companions have distinct bets at table start (Astrid: €${betComp0}, Mateo: €${betComp2})`)
+    assert(betComp0 !== 50, `Astrid is not stuck at €50 (bet: €${betComp0})`)
+    assert(betComp2 !== 50, `Mateo is not stuck at €50 (bet: €${betComp2})`)
+
     // 3. Companion Pre-allocation in BlackjackTable
     const table = new BlackjackTable({
-      difficulty: 'normal',
+      difficulty: 'hard',
       companionCount: 2,
       humanBankroll: 500,
     })
@@ -517,6 +527,7 @@ async function runAllTests() {
     assertEqual(companions.length, 2, 'Table initialized with 2 AI companions')
     for (const comp of companions) {
       assert(comp.currentBet >= 10, `Companion ${comp.profile?.name} has prepared bet €${comp.currentBet} >= €10`)
+      assert(comp.currentBet !== 50, `Companion ${comp.profile?.name} is not statically stuck at €50 (bet: €${comp.currentBet})`)
     }
   }
 

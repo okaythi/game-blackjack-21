@@ -3,6 +3,7 @@ import type { CompanionIdentity } from '../../services/companion-client'
 
 /**
  * Pure factory creating an AI companion profile from an identity and difficulty tier.
+ * Differentiates base units, sensitivity, and bankroll per companion to prevent identical bets.
  */
 export function buildAIProfile(
   identity: CompanionIdentity,
@@ -12,26 +13,31 @@ export function buildAIProfile(
   let spectrumLevel = 0.5
   let mistakeRate = 0.05
   let countSensitivity = 1.0
-  let baseMinBet = 25
+  let baseMinBet = 15
 
   if (tier === 'easy') {
-    // Leans novice, dealer-mimic tendencies
+    // Leans novice, dealer-mimic tendencies, casual recreational bets
     spectrumLevel = 0.1 + Math.random() * 0.25
     mistakeRate = 0.25 - spectrumLevel * 0.4
-    countSensitivity = 0.0 // No card counting
+    countSensitivity = 0.0 // Oblivious to card counting
     baseMinBet = 10
   } else if (tier === 'normal') {
-    // Solid Basic Strategy player
+    // Solid Basic Strategy player with modest count awareness
     spectrumLevel = 0.5 + Math.random() * 0.25
-    mistakeRate = 0.04 - (spectrumLevel - 0.5) * 0.1
-    countSensitivity = 0.3 + Math.random() * 0.4
-    baseMinBet = 25
+    mistakeRate = 0.03 - (spectrumLevel - 0.5) * 0.05
+    const normalSensitivities = [0.8, 1.0, 1.2]
+    countSensitivity = normalSensitivities[seatIndex % normalSensitivities.length] ?? 1.0
+    const normalUnits = [10, 15, 20]
+    baseMinBet = normalUnits[seatIndex % normalUnits.length] ?? 15
   } else {
-    // Expert card counter with Illustrious 18 deviations
-    spectrumLevel = 0.85 + Math.random() * 0.15
-    mistakeRate = 0.005
-    countSensitivity = 1.2 + Math.random() * 0.8
-    baseMinBet = 50
+    // Hard & Expert: AGI Superintelligent card counters with Kelly unit spreading
+    spectrumLevel = 0.90 + Math.random() * 0.10
+    mistakeRate = 0.002
+    // Distinct Kelly sensitivity and aggressive unit spread per companion
+    const agiSensitivities = [1.1, 1.35, 1.6]
+    countSensitivity = agiSensitivities[seatIndex % agiSensitivities.length] ?? 1.35
+    const agiUnits = [15, 20, 25]
+    baseMinBet = agiUnits[seatIndex % agiUnits.length] ?? 20
   }
 
   return {
