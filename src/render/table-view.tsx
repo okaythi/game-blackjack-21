@@ -196,6 +196,7 @@ export function TableView({
                 pendingBet={currentBet}
                 onDropChip={onDropChip}
                 onClickBetSpot={onClickBetSpot}
+                phase={phase}
               />
             )
           })}

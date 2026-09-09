@@ -35,35 +35,79 @@ export function calculateTrueCount(runningCount: number, cardsRemaining: number)
 }
 
 /**
- * Calculates the card counter's bet based on True Count, profile sensitivity, and bankroll.
+ * Calculates AGI-level optimal card counter bet based on True Count,
+ * mathematical player advantage, Kelly criterion unit spreading,
+ * bankroll compounding, and clean casino chip denominations.
  */
 export function calculateCardCounterBet(
   profile: AIProfile,
   trueCount: number,
   bankroll: number,
   tableMinBet: number = 10,
+  tier: string = 'normal',
 ): number {
-  const baseBet = Math.max(tableMinBet, profile.baseMinBet)
+  const baseMin = Math.max(tableMinBet, profile.baseMinBet || (tier === 'expert' ? 50 : 25))
 
-  if (bankroll <= baseBet) {
-    return Math.max(tableMinBet, bankroll)
+  if (bankroll <= baseMin) {
+    return Math.max(tableMinBet, Math.min(bankroll, baseMin))
   }
 
-  // If True Count <= 1, bet table base minimum
-  if (trueCount <= 1) {
-    return Math.min(bankroll, baseBet)
+  // Dynamic unit sizing: scales as bankroll compounds (1 unit = ~2.5% of bankroll, min table base)
+  const bankrollUnit = Math.floor(bankroll / 40 / 25) * 25
+  const dynamicUnit = Math.max(baseMin, bankrollUnit || baseMin)
+
+  // Baseline house edge: ~ -0.5% on 3:2, ~ -1.9% on 6:5 (hard/expert)
+  const baselineEdge = tier === 'hard' || tier === 'expert' ? -0.019 : -0.005
+  // Each +1 True Count shifts edge by ~ +0.51%
+  const playerAdvantage = baselineEdge + 0.0051 * trueCount
+
+  // When house has the mathematical edge (playerAdvantage <= 0 or TC <= +1.0):
+  // AGI bets strictly the 1-unit minimum. Never over-bets when negative expectation.
+  if (playerAdvantage <= 0 || trueCount <= 1.0) {
+    return Math.min(bankroll, dynamicUnit)
   }
 
-  // Linear spread: 1 unit + (TC - 1) * sensitivity
-  const spreadUnits = 1 + (trueCount - 1) * profile.countSensitivity
-  // Cap at 16 units or 20% of current bankroll
-  const maxUnits = 16
-  const clampedUnits = Math.min(maxUnits, Math.max(1, spreadUnits))
-  const targetBet = Math.round(baseBet * clampedUnits)
+  // When player has mathematical advantage (EV+):
+  // Half-Kelly optimal unit spread:
+  // TC 1.5 - 2.5: 2 units
+  // TC 2.5 - 3.5: 4 units
+  // TC 3.5 - 4.5: 6 units
+  // TC 4.5 - 5.5: 8 units
+  // TC >= 5.5: 12 units
+  let units = 1
+  if (trueCount >= 5.5) {
+    units = 12
+  } else if (trueCount >= 4.5) {
+    units = 8
+  } else if (trueCount >= 3.5) {
+    units = 6
+  } else if (trueCount >= 2.5) {
+    units = 4
+  } else if (trueCount >= 1.5) {
+    units = 2
+  }
 
-  // Maximum bet cannot exceed 20% of bankroll to manage risk of ruin
-  const maxSafeBet = Math.max(baseBet, Math.floor(bankroll * 0.2))
-  return Math.min(bankroll, Math.min(targetBet, maxSafeBet))
+  const sensitivity = Math.max(0.8, profile.countSensitivity || 1.0)
+  const spreadUnits = Math.round(units * sensitivity)
+  const rawBet = dynamicUnit * spreadUnits
+
+  // Risk-of-ruin cap: max 20% of bankroll or table max 5000
+  const maxSafeBet = Math.max(dynamicUnit, Math.floor(bankroll * 0.2))
+  const clampedBet = Math.min(bankroll, Math.min(5000, Math.min(rawBet, maxSafeBet)))
+
+  // Round to clean casino chip denominations
+  let rounded = clampedBet
+  if (clampedBet >= 300) {
+    rounded = Math.round(clampedBet / 100) * 100
+  } else if (clampedBet >= 100) {
+    rounded = Math.round(clampedBet / 50) * 50
+  } else if (clampedBet >= 25) {
+    rounded = Math.round(clampedBet / 25) * 25
+  } else {
+    rounded = Math.round(clampedBet / 5) * 5
+  }
+
+  return Math.max(tableMinBet, Math.min(bankroll, rounded))
 }
 
 /**

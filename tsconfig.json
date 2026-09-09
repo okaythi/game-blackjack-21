@@ -18,7 +18,8 @@
       "@nixlabs/game-core": [
         "../minigames/packages/game-core/src/index.ts"
       ]
-    }
+    },
+    "noEmit": true
   },
   "include": [
     "src"

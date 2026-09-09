@@ -22,6 +22,10 @@ import {
 import { secureRandomInt, fisherYatesShuffle, Shoe } from '../src/engine/cards.ts'
 import { TABLE_RULES } from '../src/engine/rules.ts'
 import { BlackjackTable } from '../src/engine/state-machine.ts'
+import { calculateNaturallyDumbBet } from '../src/engine/ai/easy-ai.ts'
+import { calculateCardCounterBet } from '../src/engine/ai/card-counter-ai.ts'
+import { getAIBetAmount } from '../src/engine/ai/ai-decision.ts'
+import { buildAIProfile } from '../src/engine/ai/profile.ts'
 
 let totalTests = 0
 let passedTests = 0
@@ -453,6 +457,67 @@ async function runAllTests() {
     assertEqual(hard.doubleAllowedOn, '9-11', 'Hard: Doubling restricted strictly to 9, 10, or 11')
     assertEqual(hard.resplitAces, false, 'Hard: No re-splitting Aces')
     assertEqual(hard.lateSurrender, false, 'Hard: No surrender')
+  }
+
+  // ----------------------------------------------------
+  // TEST SUITE 11: AI Bet Sizing (Easy Naturally Dumb vs AGI Card Counter)
+  // ----------------------------------------------------
+  console.log('\n--- Suite 11: AI Bet Sizing & Companion Wager Allocation ---')
+  {
+    // 1. Easy Mode "Naturally Dumb" Bet Sizing
+    // Runs 50 random samples to verify clean multiples of 5, min bet compliance, and recreational limits
+    for (let i = 0; i < 50; i++) {
+      const easyBet = calculateNaturallyDumbBet(1000, 10)
+      assert(easyBet >= 10, 'Easy AI bet must be at least table min €10')
+      assert(easyBet % 5 === 0, `Easy AI bet €${easyBet} must be clean multiple of €5`)
+      assert(easyBet <= 50, 'Easy AI bet must never exceed recreational ceiling €50')
+    }
+
+    // Push behavior: keeps same bet
+    const pushedBet = calculateNaturallyDumbBet(1000, 10, 'push', 25)
+    assertEqual(pushedBet, 25, 'Easy AI keeps same bet on push')
+
+    // Low bankroll behavior
+    const brokeBet = calculateNaturallyDumbBet(10, 10)
+    assertEqual(brokeBet, 10, 'Easy AI clamps to available bankroll at min')
+
+    // 2. AGI Mode (Normal / Hard / Expert) True Count Kelly Spreading
+    const expertProfile = buildAIProfile({ name: 'Sophie', code: 'DE', country: 'Germany' }, 'expert', 0)
+    const telemetryNegative = { trueCount: -1.5, runningCount: -6, decksRemaining: 4, cardsDealt: 104 }
+    const telemetryNeutral = { trueCount: 0.5, runningCount: 2, decksRemaining: 4, cardsDealt: 104 }
+    const telemetryAdvantageModerate = { trueCount: 3.0, runningCount: 12, decksRemaining: 4, cardsDealt: 104 }
+    const telemetryAdvantageHigh = { trueCount: 6.0, runningCount: 24, decksRemaining: 4, cardsDealt: 104 }
+
+    // When house has the mathematical edge (TC <= 1), bets strictly base minimum (1 unit)
+    const betNeg = calculateCardCounterBet(expertProfile, telemetryNegative.trueCount, 1000, 10, 'expert')
+    const betNeutral = calculateCardCounterBet(expertProfile, telemetryNeutral.trueCount, 1000, 10, 'expert')
+    assertEqual(betNeg, 50, 'AGI bets 1 base unit (€50 for expert) when true count is negative')
+    assertEqual(betNeutral, 50, 'AGI bets 1 base unit when true count is <= 1.0')
+
+    // When player has advantage, bets scale with Kelly spread
+    // In normal mode (3:2 payout), TC +3 gives ~ +1.03% player advantage (EV+)
+    const normalProfile = buildAIProfile({ name: 'Kenji', code: 'JP', country: 'Japan' }, 'normal', 0)
+    const betModNormal = calculateCardCounterBet(normalProfile, telemetryAdvantageModerate.trueCount, 1000, 10, 'normal')
+    assert(betModNormal >= 50, `AGI ramps bet at TC +3 in 3:2 normal mode (got €${betModNormal}, expected >= €50)`)
+    assert(betModNormal % 25 === 0, `AGI bet €${betModNormal} is rounded to clean casino chip denomination`)
+
+    // In expert mode (6:5 payout), TC +6 overcomes heavy house edge and ramps high
+    const betHighExpert = calculateCardCounterBet(expertProfile, telemetryAdvantageHigh.trueCount, 1000, 10, 'expert')
+    assert(betHighExpert >= 100, `AGI ramps higher at TC +6 in expert mode (got €${betHighExpert}, expected >= €100)`)
+    assert(betHighExpert <= 200, `AGI never exceeds 20% risk-of-ruin cap on €1000 bankroll (got €${betHighExpert})`)
+
+    // 3. Companion Pre-allocation in BlackjackTable
+    const table = new BlackjackTable({
+      difficulty: 'normal',
+      companionCount: 2,
+      humanBankroll: 500,
+    })
+
+    const companions = table.getState().seats.filter((s) => !s.isHuman)
+    assertEqual(companions.length, 2, 'Table initialized with 2 AI companions')
+    for (const comp of companions) {
+      assert(comp.currentBet >= 10, `Companion ${comp.profile?.name} has prepared bet €${comp.currentBet} >= €10`)
+    }
   }
 
   console.log('\n====================================================')

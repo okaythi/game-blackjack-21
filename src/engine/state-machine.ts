@@ -94,6 +94,35 @@ export class BlackjackTable {
       humanBankroll,
       companionIdentities: this.companionIdentities,
     })
+    this.prepareCompanionBets()
+  }
+
+  /**
+   * Pre-calculates and places upcoming round bets for AI companions so their
+   * chips and wagers are already visible on the felt during betting and round_over.
+   */
+  prepareCompanionBets(): void {
+    const telemetry = this.shoe.getTelemetry()
+    this.seats = this.seats.map((seat) => {
+      if (seat.isHuman || !seat.profile) return seat
+      const lastHand = seat.hands[0]
+      const lastResult = lastHand?.result
+      const lastBet = lastHand?.bet
+      const plannedBet = getAIBetAmount(
+        seat.profile,
+        seat.bankroll,
+        telemetry,
+        10,
+        this.difficulty,
+        lastResult,
+        lastBet,
+      )
+      const clampedBet = Math.max(10, Math.min(seat.bankroll, plannedBet))
+      return {
+        ...seat,
+        currentBet: clampedBet,
+      }
+    })
   }
 
   getState(): TableState {
@@ -126,6 +155,7 @@ export class BlackjackTable {
         profile,
       }
     })
+    this.prepareCompanionBets()
   }
 
   placeBet(seatIndex: number, amount: number): void {
@@ -164,13 +194,24 @@ export class BlackjackTable {
       }
     }
 
-    // Provision AI bets based on count telemetry
+    // Ensure AI companions have their bets placed based on latest telemetry and difficulty
     const telemetry = this.shoe.getTelemetry()
     for (let i = 0; i < this.seats.length; i++) {
       const seat = this.seats[i]!
       if (!seat.isHuman && seat.profile) {
-        const bet = getAIBetAmount(seat.profile, seat.bankroll, telemetry)
-        this.placeBet(i, Math.max(10, bet))
+        if (seat.currentBet <= 0) {
+          const lastHand = seat.hands[0]
+          const bet = getAIBetAmount(
+            seat.profile,
+            seat.bankroll,
+            telemetry,
+            10,
+            this.difficulty,
+            lastHand?.result,
+            lastHand?.bet,
+          )
+          this.placeBet(i, Math.max(10, bet))
+        }
       }
     }
 
@@ -434,6 +475,8 @@ export class BlackjackTable {
     if (this.shoe.isReshuffleNeeded()) {
       this.shoeReshufflePending = true
     }
+
+    this.prepareCompanionBets()
 
     return resolutions
   }

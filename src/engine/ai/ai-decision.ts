@@ -11,8 +11,8 @@
 import { evaluateHand } from '../hand'
 import { getBasicStrategyAction, normalizeDealerUpcard } from './basic-strategy'
 import { calculateCardCounterBet, getIllustrious18Action, shouldTakeInsurance } from './card-counter-ai'
-import { getEasyAIAction } from './easy-ai'
-import type { ActionType, AIProfile, Card, LegalActions, PlayerHand, TableRules, TableTelemetry } from '../types'
+import { getEasyAIAction, calculateNaturallyDumbBet } from './easy-ai'
+import type { ActionType, AIProfile, Card, DifficultyTier, LegalActions, PlayerHand, TableRules, TableTelemetry } from '../types'
 
 /**
  * Detects whether the current decision is a "marginal" or high-stress index decision
@@ -66,23 +66,23 @@ export function getAIInsuranceDecision(profile: AIProfile, telemetry: TableTelem
 
 /**
  * Computes the bet amount for an AI companion before dealing.
+ * - On Easy mode: naturally dumb human gambler psychology (streak pressing, loss chasing, clean €5 increments).
+ * - On Normal / Hard / Expert mode: AGI-level card counting, advantage edge calculation, and Kelly spread.
  */
 export function getAIBetAmount(
   profile: AIProfile,
   bankroll: number,
   telemetry: TableTelemetry,
   tableMinBet: number = 10,
+  difficulty: DifficultyTier = 'normal',
+  lastHandResult?: string | undefined,
+  lastHandBet?: number | undefined,
 ): number {
-  if (profile.spectrumLevel >= 0.8) {
-    return calculateCardCounterBet(profile, telemetry.trueCount, bankroll, tableMinBet)
+  if (difficulty === 'easy') {
+    return calculateNaturallyDumbBet(bankroll, tableMinBet, lastHandResult, lastHandBet)
   }
 
-  // Normal / easy players bet base min bet, occasionally adding 1 unit if on a roll
-  const base = Math.max(tableMinBet, profile.baseMinBet)
-  if (bankroll <= base) {
-    return Math.max(tableMinBet, bankroll)
-  }
-  return Math.min(bankroll, base)
+  return calculateCardCounterBet(profile, telemetry.trueCount, bankroll, tableMinBet, difficulty)
 }
 
 /**
