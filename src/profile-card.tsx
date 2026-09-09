@@ -1,13 +1,22 @@
-import type React from 'react'
+import type { GamePluginProfileCard, ProfileCardProps } from '@nixlabs/game-core'
 
-export const blackjack_21ProfileCard = {
-  getMetrics: ({ stat }: any) => [
-    { label: 'Personal Best', value: stat?.highscore ? String(stat.highscore) : '—' },
-    { label: 'World Record', value: stat?.globalHighscore ? String(stat.globalHighscore) : '—' },
+export const blackjackProfileCard: GamePluginProfileCard = {
+  getMetrics: ({ stat }: ProfileCardProps) => [
+    {
+      label: 'Peak Bankroll',
+      value: stat?.highscore !== null && stat?.highscore !== undefined ? `$${stat.highscore.toLocaleString()}` : '—',
+    },
+    {
+      label: 'World Record',
+      value:
+        stat?.globalHighscore !== null && stat?.globalHighscore !== undefined
+          ? `$${stat.globalHighscore.toLocaleString()}`
+          : '—',
+    },
   ],
-  runsLabel: 'Matches Played',
+  runsLabel: 'Hands Played',
   actionLabel: {
-    owner: 'Play Again',
-    other: 'Challenge PB',
+    owner: 'Take a Seat',
+    other: 'Challenge Bankroll',
   },
 }

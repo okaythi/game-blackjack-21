@@ -1,17 +1,21 @@
-import { blackjack_21Manifest } from './manifest'
-import { createBlackjack21Runtime } from './runtime'
-import { blackjack_21Achievements } from './achievements'
-import { blackjack_21ProfileCard } from './profile-card'
+import type { GamePlugin } from '@nixlabs/game-core'
+import { blackjack21Manifest } from './manifest'
+import { createBlackjackRuntime } from './runtime'
+import { BLACKJACK_ACHIEVEMENTS } from './achievements'
+import { blackjackProfileCard } from './profile-card'
+import { BlackjackStage } from './render/blackjack-stage'
 
-export const gamePlugin = {
-  manifest: blackjack_21Manifest,
-  createRuntime: createBlackjack21Runtime,
-  achievements: blackjack_21Achievements,
-  profileCard: blackjack_21ProfileCard,
+export const blackjack21Plugin: GamePlugin = {
+  manifest: blackjack21Manifest,
+  Component: BlackjackStage,
+  createRuntime: createBlackjackRuntime,
+  achievements: BLACKJACK_ACHIEVEMENTS,
+  profileCard: blackjackProfileCard,
   scoring: {
     mode: 'points',
-    hasValidScore: (s: number | null) => s !== null && s > 0,
+    hasValidScore: (score) => score !== null && score > 0,
+    formatScore: (score) => (score !== null && score !== undefined ? `$${score.toLocaleString()}` : '$0'),
   },
 }
 
-export default gamePlugin
+export default blackjack21Plugin

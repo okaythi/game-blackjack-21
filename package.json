@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx scripts/run-unit-tests.mjs",
+    "simulate": "node --import tsx scripts/simulate-monte-carlo.mjs"
   },
   "peerDependencies": {
     "@nixlabs/game-core": ">=0.1.0",
@@ -20,6 +22,7 @@
     "@vitejs/plugin-react": "^5.0.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "tsx": "^4.23.13",
     "typescript": "^5.8.3",
     "vite": "^7.1.5"
   }
