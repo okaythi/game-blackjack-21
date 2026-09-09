@@ -91,12 +91,12 @@ export function BettingControls({
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '10px',
+        gap: '6px',
         background: 'rgba(24, 24, 27, 0.94)',
-        padding: '12px 18px',
-        borderRadius: '16px',
+        padding: '8px 14px',
+        borderRadius: '14px',
         border: '1px solid rgba(217, 119, 6, 0.35)',
-        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
         backdropFilter: 'blur(10px)',
         maxWidth: '720px',
         margin: '0 auto',
@@ -118,7 +118,7 @@ export function BettingControls({
           <span style={{ fontSize: '12px', color: '#a1a1aa', fontWeight: 600 }}>Active Wager:</span>
           <span
             style={{
-              fontSize: '17px',
+              fontSize: '16px',
               fontWeight: 800,
               color: currentBet > 0 ? '#fef08a' : '#71717a',
               letterSpacing: '0.3px',
@@ -135,103 +135,89 @@ export function BettingControls({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#a1a1aa' }}>
           <span>Bankroll:</span>
-          <span style={{ fontWeight: 800, color: '#4ade80', fontSize: '14px' }}>
+          <span style={{ fontWeight: 800, color: '#4ade80', fontSize: '13.5px' }}>
             €{bankroll.toLocaleString()}
           </span>
         </div>
       </div>
 
-      {/* Quick Bet Presets & Range Slider */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '8px',
-          width: '100%',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-          {[
-            { label: `Min (€${minBet})`, val: minBet },
-            { label: '€25', val: 25 },
-            { label: '€50', val: 50 },
-            { label: '€100', val: 100 },
-            { label: 'All-In', val: maxWagerPossible },
-          ].map((preset) => {
-            const isAffordable = preset.val <= maxWagerPossible
-            return (
-              <button
-                key={preset.label}
-                type="button"
-                disabled={disabled || !isAffordable}
-                onClick={() => handleQuickBet(preset.val)}
-                style={{
-                  background: currentBet === preset.val ? '#d97706' : 'rgba(255, 255, 255, 0.07)',
-                  color: currentBet === preset.val ? '#ffffff' : isAffordable ? '#d4d4d8' : '#71717a',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '3px 8px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  cursor: isAffordable && !disabled ? 'pointer' : 'not-allowed',
-                  transition: 'background 0.15s ease',
-                }}
-              >
-                {preset.label}
-              </button>
-            )
-          })}
-        </div>
-
-        {onSetBet && maxWagerPossible > minBet && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 140px', minWidth: '120px' }}>
-            <input
-              type="range"
-              min={minBet}
-              max={maxWagerPossible}
-              step={currentBet >= 100 ? 25 : 5}
-              value={Math.max(minBet, Math.min(currentBet, maxWagerPossible))}
-              disabled={disabled}
-              onChange={(e) => onSetBet(Number(e.target.value))}
-              style={{
-                width: '100%',
-                accentColor: '#d97706',
-                cursor: disabled ? 'not-allowed' : 'pointer',
-              }}
-              title="Drag slider to set bet"
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Chip Rack (Draggable chips with grabbing hand cursor) */}
+      {/* Quick Bet Presets */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '7px',
+          gap: '6px',
+          width: '100%',
           flexWrap: 'wrap',
-          padding: '2px 4px',
+        }}
+      >
+        {[
+          { label: `Min (€${minBet})`, val: minBet },
+          { label: '€25', val: 25 },
+          { label: '€50', val: 50 },
+          { label: '€100', val: 100 },
+          { label: 'All-In', val: maxWagerPossible },
+        ].map((preset) => {
+          const isAffordable = preset.val <= maxWagerPossible
+          return (
+            <button
+              key={preset.label}
+              type="button"
+              disabled={disabled || !isAffordable}
+              onClick={() => handleQuickBet(preset.val)}
+              style={{
+                background: currentBet === preset.val ? '#d97706' : 'rgba(255, 255, 255, 0.07)',
+                color: currentBet === preset.val ? '#ffffff' : isAffordable ? '#d4d4d8' : '#71717a',
+                border: 'none',
+                borderRadius: '5px',
+                padding: '2.5px 8px',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: isAffordable && !disabled ? 'pointer' : 'not-allowed',
+                transition: 'background 0.15s ease',
+              }}
+            >
+              {preset.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Chip Rack (Draggable chips with availability restrictions) */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px',
+          flexWrap: 'wrap',
+          padding: '1px 2px',
         }}
         title="Click or drag chips onto the betting spot"
       >
         {CHIP_DENOMS.map((denom) => {
-          const wouldExceed = currentBet + denom > bankroll || currentBet + denom > maxBet
+          const isBelowMinToOpen = currentBet < minBet && denom < minBet
+          const exceedsBankroll = currentBet + denom > bankroll
+          const exceedsMaxBet = currentBet + denom > maxBet
+          const isAvailable = !disabled && !isBelowMinToOpen && !exceedsBankroll && !exceedsMaxBet
+
           return (
             <Chip
               key={denom}
               denomination={denom}
-              size={40}
-              disabled={disabled || wouldExceed}
-              draggable={!disabled && !wouldExceed}
+              size={38}
+              disabled={!isAvailable}
+              draggable={isAvailable}
               onDragStart={(e) => {
+                if (!isAvailable) {
+                  e.preventDefault()
+                  return
+                }
                 e.dataTransfer.setData('text/plain', String(denom))
                 e.dataTransfer.effectAllowed = 'copy'
               }}
-              onClick={() => onAddChip(denom)}
+              onClick={() => isAvailable && onAddChip(denom)}
             />
           )
         })}
@@ -243,10 +229,10 @@ export function BettingControls({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '8px',
+          gap: '7px',
           flexWrap: 'wrap',
           width: '100%',
-          marginTop: '2px',
+          marginTop: '1px',
         }}
       >
         <button
@@ -257,9 +243,9 @@ export function BettingControls({
             background: 'rgba(255,255,255,0.08)',
             color: '#d4d4d8',
             border: '1px solid rgba(255,255,255,0.15)',
-            borderRadius: '8px',
-            padding: '7px 14px',
-            fontSize: '12.5px',
+            borderRadius: '7px',
+            padding: '6px 12px',
+            fontSize: '12px',
             fontWeight: 600,
             cursor: currentBet > 0 && !disabled ? 'pointer' : 'not-allowed',
             opacity: currentBet > 0 ? 1 : 0.5,
@@ -277,9 +263,9 @@ export function BettingControls({
               background: 'rgba(255,255,255,0.08)',
               color: '#d4d4d8',
               border: '1px solid rgba(255,255,255,0.15)',
-              borderRadius: '8px',
-              padding: '7px 14px',
-              fontSize: '12.5px',
+              borderRadius: '7px',
+              padding: '6px 12px',
+              fontSize: '12px',
               fontWeight: 600,
               cursor: !disabled ? 'pointer' : 'not-allowed',
             }}
@@ -296,9 +282,9 @@ export function BettingControls({
             background: canDouble ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255,255,255,0.05)',
             color: canDouble ? '#fef08a' : '#71717a',
             border: '1px solid ' + (canDouble ? '#d97706' : 'transparent'),
-            borderRadius: '8px',
-            padding: '7px 14px',
-            fontSize: '12.5px',
+            borderRadius: '7px',
+            padding: '6px 12px',
+            fontSize: '12px',
             fontWeight: 600,
             cursor: canDouble ? 'pointer' : 'not-allowed',
             opacity: canDouble ? 1 : 0.5,
@@ -316,15 +302,15 @@ export function BettingControls({
             background: canDeal ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : 'rgba(255,255,255,0.08)',
             color: canDeal ? '#ffffff' : '#71717a',
             border: '1px solid ' + (canDeal ? '#22c55e' : 'transparent'),
-            borderRadius: '8px',
-            padding: '8px 22px',
-            fontSize: '14px',
+            borderRadius: '7px',
+            padding: '7px 18px',
+            fontSize: '13px',
             fontWeight: 800,
             cursor: canDeal ? 'pointer' : 'not-allowed',
-            boxShadow: canDeal ? '0 4px 14px rgba(22, 163, 74, 0.4)' : 'none',
+            boxShadow: canDeal ? '0 4px 12px rgba(22, 163, 74, 0.4)' : 'none',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            gap: '6px',
             transition: 'all 0.15s ease',
           }}
         >
@@ -332,10 +318,10 @@ export function BettingControls({
           <kbd
             style={{
               opacity: 0.8,
-              fontSize: '10.5px',
+              fontSize: '10px',
               background: 'rgba(0,0,0,0.25)',
-              padding: '1px 5px',
-              borderRadius: '4px',
+              padding: '1px 4px',
+              borderRadius: '3px',
             }}
           >
             Space

@@ -8,6 +8,8 @@ interface TableHeaderProps {
   readonly isMuted: boolean
   readonly isTrainerOpen?: boolean | undefined
   readonly isTrainerAvailable?: boolean | undefined
+  readonly candyBalance?: number | undefined
+  readonly onRequestDeposit?: (() => void) | undefined
   readonly onSelectDifficulty: (tier: DifficultyTier) => void
   readonly onSelectCompanions: (count: 1 | 2 | 3) => void
   readonly onToggleTurbo: () => void
@@ -24,6 +26,8 @@ export function TableHeader({
   isMuted,
   isTrainerOpen = false,
   isTrainerAvailable = true,
+  candyBalance,
+  onRequestDeposit,
   onSelectDifficulty,
   onSelectCompanions,
   onToggleTurbo,
@@ -41,8 +45,8 @@ export function TableHeader({
         alignItems: 'center',
         flexWrap: 'wrap',
         gap: '6px',
-        marginBottom: '6px',
-        padding: '5px 10px',
+        marginBottom: '4px',
+        padding: '4px 10px',
         background: 'rgba(24, 24, 27, 0.9)',
         borderRadius: '8px',
         border: '1px solid rgba(217, 119, 6, 0.25)',
@@ -51,8 +55,8 @@ export function TableHeader({
         color: '#d4d4d8',
       }}
     >
-      {/* Left: Game Title & Difficulty Tier */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      {/* Left: Game Title, Difficulty Tier & Candy Deposit */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
         <span style={{ color: '#fef08a', fontWeight: 800, letterSpacing: '0.5px' }}>
           BLACKJACK 21
         </span>
@@ -88,6 +92,43 @@ export function TableHeader({
             </button>
           )
         })}
+
+        {/* Candy Vault & Prominent Deposit Chips CTA */}
+        {candyBalance !== undefined && (
+          <>
+            <span style={{ color: '#52525b' }}>•</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+              <span>🍬</span>
+              <span style={{ fontWeight: 800, color: '#4ade80' }}>{candyBalance}</span>
+            </div>
+          </>
+        )}
+
+        {onRequestDeposit && (
+          <button
+            type="button"
+            onClick={onRequestDeposit}
+            style={{
+              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              color: '#000000',
+              border: 'none',
+              borderRadius: '5px',
+              padding: '2px 8px',
+              fontSize: '10.5px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(245, 158, 11, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+            }}
+            title="Exchange Candies for table chips"
+          >
+            <span style={{ fontSize: '11px', fontWeight: 900 }}>+</span>
+            <span>Deposit Chips</span>
+          </button>
+        )}
       </div>
 
       {/* Right: Companions, Speed Segmented Control, Trainer, Audio & Cash Out */}

@@ -357,7 +357,9 @@ export function BlackjackStage({
     (denom: ChipDenomination) => {
       const human = tableState.seats.find((s) => s.isHuman)
       if (!human) return
+      const minBet = 10
       const maxBet = 5000
+      if (currentBet < minBet && denom < minBet) return
       if (currentBet + denom <= human.bankroll && currentBet + denom <= maxBet) {
         setCurrentBet((prev) => prev + denom)
         playSound('chip_click')
@@ -437,42 +439,38 @@ export function BlackjackStage({
 
     // 3. Dealer turn: draw step by step
     if (phase === 'dealer_turn') {
-      const delay = isTurbo ? 100 : 450
+      const delay = isTurbo ? 100 : 380
       const timer = setTimeout(() => {
         const isDone = table.advanceDealerTurn()
         playSound('card_flip')
-        refreshState()
         if (isDone) {
-          setTimeout(
-            () => {
-              const resolutions = table.resolveRound()
-              refreshState()
+          const resolutions = table.resolveRound()
+          refreshState()
 
-              // Process resolutions for sounds & achievements
-              const humanRes = resolutions.find((r) => r.seatIndex === 1)
-              if (humanRes) {
-                if (humanRes.result === 'blackjack') {
-                  playSound('blackjack')
-                  onUnlockAchievement?.('blackjack-21_natural_21')
-                  setHumanStreak((s) => s + 1)
-                } else if (humanRes.result === 'win') {
-                  playSound('win_chime')
-                  setHumanStreak((s) => s + 1)
-                } else if (humanRes.result === 'loss') {
-                  playSound('bust')
-                  setHumanStreak(0)
-                } else {
-                  playSound('push')
-                }
+          // Process resolutions for sounds & achievements
+          const humanRes = resolutions.find((r) => r.seatIndex === 1)
+          if (humanRes) {
+            if (humanRes.result === 'blackjack') {
+              playSound('blackjack')
+              onUnlockAchievement?.('blackjack-21_natural_21')
+              setHumanStreak((s) => s + 1)
+            } else if (humanRes.result === 'win') {
+              playSound('win_chime')
+              setHumanStreak((s) => s + 1)
+            } else if (humanRes.result === 'loss') {
+              playSound('bust')
+              setHumanStreak(0)
+            } else {
+              playSound('push')
+            }
 
-                // Check 5-win streak
-                if (humanStreak + 1 >= 5) {
-                  onUnlockAchievement?.('blackjack-21_hot_streak')
-                }
-              }
-            },
-            isTurbo ? 150 : 500,
-          )
+            // Check 5-win streak
+            if (humanStreak + 1 >= 5) {
+              onUnlockAchievement?.('blackjack-21_hot_streak')
+            }
+          }
+        } else {
+          refreshState()
         }
       }, delay)
       return () => clearTimeout(timer)
@@ -495,7 +493,7 @@ export function BlackjackStage({
     const table = tableRef.current
     if (!table) return
     const human = tableState.seats.find((s) => s.isHuman)
-    if (!human || currentBet < 10) return
+    if (!human || currentBet < 10 || currentBet > human.bankroll) return
 
     setPreviousBet(currentBet)
     playSound('chip_bet')
@@ -557,47 +555,11 @@ export function BlackjackStage({
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '8px',
+        gap: '4px',
         width: '100%',
         position: 'relative',
       }}
     >
-      {/* Optional Top Mini Bar: Candy Balance & Buy-In Button */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          width: '100%',
-          maxWidth: '920px',
-          padding: '2px 8px',
-          fontSize: '11px',
-          color: '#a1a1aa',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span>🍬 Candy Vault:</span>
-          <span style={{ fontWeight: 800, color: '#4ade80' }}>{candyBalance}</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowBuyInModal(true)}
-          style={{
-            background: 'rgba(217, 119, 6, 0.15)',
-            border: '1px solid rgba(217, 119, 6, 0.35)',
-            color: '#fef08a',
-            borderRadius: '5px',
-            padding: '2px 8px',
-            fontSize: '10.5px',
-            fontWeight: 700,
-            cursor: 'pointer',
-          }}
-          title="Exchange Candies for more table chips"
-        >
-          + Deposit Chips
-        </button>
-      </div>
-
       {/* Buy-In "Take a Seat" Modal (Only if explicitly opened, never a forced jumpscare) */}
       {showBuyInModal && (
         <BuyInModal
@@ -633,6 +595,8 @@ export function BlackjackStage({
       <TableView
         state={tableState}
         currentBet={currentBet}
+        candyBalance={candyBalance}
+        onRequestDeposit={() => setShowBuyInModal(true)}
         onSelectDifficulty={handleSelectDifficulty}
         onSelectCompanions={handleSelectCompanions}
         isTurbo={isTurbo}
@@ -654,8 +618,8 @@ export function BlackjackStage({
       />
 
       {/* Dynamic Controls Bottom Strip */}
-      <div style={{ width: '100%', maxWidth: '720px', minHeight: '74px' }}>
-        {tableState.phase === 'betting' ? (
+      <div style={{ width: '100%', maxWidth: '720px', minHeight: '66px' }}>
+        {tableState.phase === 'betting' || tableState.phase === 'round_over' ? (
           <BettingControls
             currentBet={currentBet}
             bankroll={humanSeat?.bankroll ?? 0}
@@ -683,17 +647,17 @@ export function BlackjackStage({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '10px',
-              padding: '10px 16px',
+              gap: '8px',
+              padding: '8px 14px',
               background: 'rgba(24, 24, 27, 0.85)',
-              borderRadius: '12px',
+              borderRadius: '10px',
               border: '1px solid rgba(217, 119, 6, 0.25)',
               color: '#d4d4d8',
-              fontSize: '13px',
+              fontSize: '12.5px',
               fontWeight: 600,
             }}
           >
-            <span style={{ fontSize: '16px' }}>⏳</span>
+            <span style={{ fontSize: '15px' }}>⏳</span>
             <span>
               {tableState.phase === 'dealing'
                 ? 'Dealing cards...'

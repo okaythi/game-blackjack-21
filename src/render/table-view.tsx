@@ -6,6 +6,8 @@ import { SeatView } from './table/seat-view'
 interface TableViewProps {
   readonly state: TableState
   readonly currentBet?: number
+  readonly candyBalance?: number | undefined
+  readonly onRequestDeposit?: (() => void) | undefined
   readonly onSelectDifficulty: (tier: DifficultyTier) => void
   readonly onSelectCompanions: (count: 1 | 2 | 3) => void
   readonly isTurbo: boolean
@@ -24,6 +26,8 @@ interface TableViewProps {
 export function TableView({
   state,
   currentBet = 0,
+  candyBalance,
+  onRequestDeposit,
   onSelectDifficulty,
   onSelectCompanions,
   isTurbo,
@@ -60,6 +64,8 @@ export function TableView({
         isMuted={isMuted}
         isTrainerOpen={isTrainerOpen}
         isTrainerAvailable={isTrainerAvailable}
+        candyBalance={candyBalance}
+        onRequestDeposit={onRequestDeposit}
         onSelectDifficulty={onSelectDifficulty}
         onSelectCompanions={onSelectCompanions}
         onToggleTurbo={onToggleTurbo}
@@ -72,25 +78,25 @@ export function TableView({
       <main
         style={{
           width: '100%',
-          aspectRatio: '16 / 7.6',
-          maxHeight: 'min(500px, calc(100vh - 240px))',
+          aspectRatio: '16 / 7.2',
+          maxHeight: 'min(430px, calc(100vh - 200px))',
           background: 'radial-gradient(ellipse at 50% 12%, #ece4d4 0%, #ded4c0 60%, #c4b798 100%)',
           borderRadius: '14px 14px 220px 220px',
-          border: '10px solid #332014', // Mahogany / leather padded armrest rail
+          border: '7px solid #332014', // Mahogany / leather padded armrest rail
           boxShadow:
-            'inset 0 0 50px rgba(0, 0, 0, 0.4), 0 12px 30px rgba(0, 0, 0, 0.6), 0 0 0 2px #d97706',
+            'inset 0 0 40px rgba(0, 0, 0, 0.4), 0 10px 24px rgba(0, 0, 0, 0.5), 0 0 0 1.5px #d97706',
           position: 'relative',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
-          padding: '16px 20px 26px',
+          padding: '10px 14px 14px',
           boxSizing: 'border-box',
         }}
       >
         {/* Table Felt Inscriptions & Arch Rule Lines */}
         <svg
-          viewBox="0 0 1000 480"
+          viewBox="0 0 1000 450"
           style={{
             position: 'absolute',
             inset: 0,
@@ -103,14 +109,14 @@ export function TableView({
         >
           {/* Main Semi-circular Betting Boundary Arc */}
           <path
-            d="M 120 180 A 380 340 0 0 0 880 180"
+            d="M 120 160 A 380 300 0 0 0 880 160"
             fill="none"
             stroke="#d97706"
             strokeWidth="2"
             strokeOpacity="0.55"
           />
           <path
-            d="M 150 180 A 350 310 0 0 0 850 180"
+            d="M 150 160 A 350 270 0 0 0 850 160"
             fill="none"
             stroke="#d97706"
             strokeWidth="1"
@@ -118,12 +124,12 @@ export function TableView({
           />
 
           {/* Traditional Casino Table Rules Curved Text */}
-          <path id="archRulePath" d="M 230 185 A 280 250 0 0 0 770 185" fill="none" />
+          <path id="archRulePath" d="M 230 165 A 280 220 0 0 0 770 165" fill="none" />
           <text
             fill="#854d0e"
-            fontSize="15"
+            fontSize="14"
             fontWeight="800"
-            letterSpacing="3"
+            letterSpacing="2.5"
             opacity="0.8"
             style={{ textTransform: 'uppercase' }}
           >
@@ -135,12 +141,12 @@ export function TableView({
           {/* Subtitle Rule */}
           <text
             x="500"
-            y="215"
+            y="190"
             textAnchor="middle"
             fill="#713f12"
-            fontSize="10"
+            fontSize="9.5"
             fontWeight="700"
-            letterSpacing="1.2"
+            letterSpacing="1"
             opacity="0.65"
           >
             {rules.dealerHitsSoft17
@@ -151,12 +157,12 @@ export function TableView({
           {/* Insurance Inscription */}
           <text
             x="500"
-            y="235"
+            y="208"
             textAnchor="middle"
             fill="#854d0e"
-            fontSize="9"
+            fontSize="8.5"
             fontWeight="800"
-            letterSpacing="1.8"
+            letterSpacing="1.5"
             opacity="0.55"
           >
             INSURANCE PAYS 2 TO 1
