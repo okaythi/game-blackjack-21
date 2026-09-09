@@ -15,14 +15,19 @@ import { BettingControls } from './betting-controls'
 import { TrainerDrawer } from './trainer-drawer'
 import { BuyInModal } from './modals/buy-in-modal'
 import { CashOutModal } from './modals/cash-out-modal'
-import { fetchCompanions, type CompanionIdentity } from '../services/companion-client'
 import {
-  adjustCandyBalance,
+  fetchCompanions,
+  getCachedCompanions,
+  type CompanionIdentity,
+} from '../services/companion-client'
+import {
+  cashOutChips,
+  depositCandiesToChips,
+  fetchBlackjackSession,
   getLocalCandyBalance,
-  isFirstTimeBlackjackPlayer,
-  recordBlackjackPeakScore,
-  recordBlackjackPlay,
+  saveBlackjackSession,
   subscribeCandyBalance,
+  type ActiveWallet,
 } from '../services/platform-storage'
 
 export interface BlackjackStageProps {
@@ -33,12 +38,6 @@ export interface BlackjackStageProps {
   readonly onUnlockAchievement?: (id: string) => void
 }
 
-interface ActiveWallet {
-  depositedEur: number
-  bonusEur: number
-  initialTotalEur: number
-}
-
 export function BlackjackStage({
   initialBankroll,
   initialCandy,
@@ -46,24 +45,35 @@ export function BlackjackStage({
   onRecordHighscore,
   onUnlockAchievement,
 }: BlackjackStageProps) {
-  // Table Seated State
-  const [isSeated, setIsSeated] = useState(false)
+  // Table Seated State: seated immediately without full-screen popup
+  const [isSeated, setIsSeated] = useState(true)
+  const [showBuyInModal, setShowBuyInModal] = useState(false)
   const [showCashOutModal, setShowCashOutModal] = useState(false)
+  const [isTrainerOpen, setIsTrainerOpen] = useState(false)
   const [candyBalance, setCandyBalance] = useState(() => initialCandy ?? getLocalCandyBalance())
-  const [isFirstTimePlayer, setIsFirstTimePlayer] = useState(() => isFirstTimeBlackjackPlayer())
-  const [wallet, setWallet] = useState<ActiveWallet>({ depositedEur: 0, bonusEur: 0, initialTotalEur: 0 })
+  const [isFirstTimePlayer, setIsFirstTimePlayer] = useState(false)
+  
+  const [wallet, setWallet] = useState<ActiveWallet>(() => ({
+    depositedEur: 0,
+    bonusEur: 500,
+    initialTotalEur: 500,
+  }))
 
   // Gameplay Settings
   const [difficulty, setDifficulty] = useState<DifficultyTier>('normal')
   const [companionCount, setCompanionCount] = useState<1 | 2 | 3>(2)
-  const [companionIdentities, setCompanionIdentities] = useState<CompanionIdentity[]>([])
+  const [companionIdentities, setCompanionIdentities] = useState<CompanionIdentity[]>(() =>
+    getCachedCompanions(2),
+  )
   const [isTurbo, setIsTurbo] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [currentBet, setCurrentBet] = useState(25)
   const [previousBet, setPreviousBet] = useState(25)
   const [lastMistake, setLastMistake] = useState<string | null>(null)
   const [humanStreak, setHumanStreak] = useState(0)
-  const [peakBankroll, setPeakBankroll] = useState(initialBankroll ?? 500)
+
+  const startingChips = initialBankroll ?? 500
+  const [peakBankroll, setPeakBankroll] = useState(startingChips)
 
   // Audio Engine instance
   const audioRef = useRef<BlackjackAudioEngine | null>(null)
@@ -71,17 +81,66 @@ export function BlackjackStage({
     audioRef.current = new BlackjackAudioEngine()
   }
 
-  // State Machine instance
+  // State Machine instance initialized with cached diverse companions
   const tableRef = useRef<BlackjackTable | null>(null)
   if (!tableRef.current) {
+    const initialComps = getCachedCompanions(companionCount)
     tableRef.current = new BlackjackTable({
-      difficulty: 'normal',
-      companionCount: 2,
-      humanBankroll: initialBankroll ?? 500,
+      difficulty,
+      companionCount,
+      humanBankroll: startingChips,
+      companionIdentities: initialComps,
     })
   }
 
   const [tableState, setTableState] = useState<TableState>(() => tableRef.current!.getState())
+
+  // Load authoritative player session and bankroll from Cloudflare D1 database
+  useEffect(() => {
+    let cancelled = false
+    void fetchBlackjackSession().then((res) => {
+      if (cancelled) return
+      if (res.ok && res.session) {
+        setCandyBalance(res.candy)
+        setIsFirstTimePlayer(res.isFirstTime ?? false)
+        setWallet(res.session.wallet)
+        setDifficulty(res.session.difficulty ?? 'normal')
+        setCompanionCount(res.session.companionCount ?? 2)
+        setPeakBankroll(res.session.bankroll)
+
+        const comps = getCachedCompanions(res.session.companionCount ?? 2)
+        const newTable = new BlackjackTable({
+          difficulty: res.session.difficulty ?? 'normal',
+          companionCount: res.session.companionCount ?? 2,
+          humanBankroll: res.session.bankroll,
+          companionIdentities: comps,
+        })
+        tableRef.current = newTable
+        setTableState({ ...newTable.getState() })
+        setCurrentBet(Math.min(25, res.session.bankroll > 0 ? res.session.bankroll : 10))
+
+        if (res.session.bankroll === 0) {
+          setShowBuyInModal(true)
+        }
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Unlock audio on first user gesture
+  useEffect(() => {
+    const handleFirstGesture = () => {
+      audioRef.current?.unlock()
+    }
+    window.addEventListener('pointerdown', handleFirstGesture, { once: true })
+    window.addEventListener('keydown', handleFirstGesture, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', handleFirstGesture)
+      window.removeEventListener('keydown', handleFirstGesture)
+    }
+  }, [])
 
   // Keep candy balance in sync with platform updates
   useEffect(() => {
@@ -111,6 +170,7 @@ export function BlackjackStage({
   const playSound = useCallback(
     (sound: import('../engine/audio/sfx').BlackjackSfxName) => {
       if (!isMuted && audioRef.current) {
+        audioRef.current.unlock()
         audioRef.current.play(sound)
       }
     },
@@ -128,73 +188,124 @@ export function BlackjackStage({
       if (human && human.bankroll > peakBankroll) {
         setPeakBankroll(human.bankroll)
         onRecordHighscore?.(human.bankroll)
-        recordBlackjackPeakScore(human.bankroll)
         if (human.bankroll >= 5000) {
           onUnlockAchievement?.('blackjack-21_high_roller')
         }
       }
-    }
-  }, [peakBankroll, onRecordHighscore, onUnlockAchievement])
 
-  // Buy-In Handler: Player confirms taking a seat
+      // Persist active table session to D1 so player chips never vanish
+      if (human) {
+        saveBlackjackSession({
+          bankroll: human.bankroll,
+          wallet,
+          difficulty,
+          companionCount,
+        })
+      }
+    }
+  }, [peakBankroll, wallet, difficulty, companionCount, onRecordHighscore, onUnlockAchievement])
+
+  // Buy-In Handler: Player confirms taking a seat or topping up
   const handleConfirmBuyIn = useCallback(
-    (depositedCandies: number, receivedChipsEur: number, bonusEur: number) => {
+    async (depositedCandies: number, receivedChipsEur: number, bonusEur: number) => {
       const totalChips = receivedChipsEur + bonusEur
       if (totalChips <= 0) return
 
-      // Deduct deposited candies
       if (depositedCandies > 0) {
-        adjustCandyBalance(-depositedCandies)
-        onBankCandy?.(-depositedCandies)
+        const depositRes = await depositCandiesToChips(depositedCandies)
+        if (depositRes.ok) {
+          setCandyBalance(depositRes.candy)
+          setWallet(depositRes.wallet)
+          const newBankroll = depositRes.bankroll
+          const newTable = new BlackjackTable({
+            difficulty,
+            companionCount,
+            humanBankroll: newBankroll,
+            ...(companionIdentities.length > 0 ? { companionIdentities } : {}),
+          })
+          tableRef.current = newTable
+          setTableState({ ...newTable.getState() })
+          setCurrentBet(Math.min(25, newBankroll))
+          setIsSeated(true)
+          setShowBuyInModal(false)
+          playSound('chip_bet')
+          return
+        }
       }
 
-      // Record first play & update state
-      recordBlackjackPlay()
       setIsFirstTimePlayer(false)
 
       const newWallet: ActiveWallet = {
-        depositedEur: receivedChipsEur,
-        bonusEur,
-        initialTotalEur: totalChips,
+        depositedEur: wallet.depositedEur + receivedChipsEur,
+        bonusEur: wallet.bonusEur + bonusEur,
+        initialTotalEur: wallet.initialTotalEur + totalChips,
       }
       setWallet(newWallet)
 
       // Initialize table with player bankroll
+      const currentHuman = tableState.seats.find((s) => s.isHuman)
+      const newBankroll = (currentHuman?.bankroll ?? 0) + totalChips
+
       const newTable = new BlackjackTable({
         difficulty,
         companionCount,
-        humanBankroll: totalChips,
+        humanBankroll: newBankroll,
         ...(companionIdentities.length > 0 ? { companionIdentities } : {}),
       })
       tableRef.current = newTable
       setTableState({ ...newTable.getState() })
-      setCurrentBet(Math.min(25, totalChips))
+      setCurrentBet(Math.min(25, newBankroll))
       setIsSeated(true)
+      setShowBuyInModal(false)
+
+      saveBlackjackSession({
+        bankroll: newBankroll,
+        wallet: newWallet,
+        difficulty,
+        companionCount,
+      })
+
       playSound('chip_bet')
     },
-    [difficulty, companionCount, companionIdentities, onBankCandy, playSound],
+    [difficulty, companionCount, companionIdentities, wallet, tableState.seats, playSound],
   )
 
   // Leave Table / Cash Out Handler
   const handleConfirmLeaveTable = useCallback(
-    (candiesReturn: number) => {
-      if (candiesReturn > 0) {
-        adjustCandyBalance(candiesReturn)
-        onBankCandy?.(candiesReturn)
-      }
-
+    async () => {
       const human = tableState.seats.find((s) => s.isHuman)
       if (human && human.bankroll > 0) {
-        recordBlackjackPeakScore(human.bankroll)
         onRecordHighscore?.(human.bankroll)
       }
 
+      // Execute cashout in D1 database
+      const cashOutRes = await cashOutChips()
+      if (cashOutRes.ok) {
+        setCandyBalance(cashOutRes.candy)
+        onBankCandy?.(cashOutRes.cashedOutCandies)
+        setWallet(cashOutRes.wallet)
+      } else {
+        const freshWallet: ActiveWallet = { depositedEur: 0, bonusEur: 0, initialTotalEur: 0 }
+        setWallet(freshWallet)
+      }
+
       setShowCashOutModal(false)
-      setIsSeated(false)
-      setCandyBalance(getLocalCandyBalance())
+      setIsSeated(true)
+
+      const newTable = new BlackjackTable({
+        difficulty,
+        companionCount,
+        humanBankroll: 0,
+        ...(companionIdentities.length > 0 ? { companionIdentities } : {}),
+      })
+      tableRef.current = newTable
+      setTableState({ ...newTable.getState() })
+      setCurrentBet(10)
+      setShowBuyInModal(true)
+
       playSound('win_chime')
     },
-    [tableState.seats, onBankCandy, onRecordHighscore, playSound],
+    [difficulty, companionCount, companionIdentities, tableState.seats, onBankCandy, onRecordHighscore, playSound],
   )
 
   // Change difficulty
@@ -208,9 +319,15 @@ export function BlackjackStage({
         humanBankroll: currentHumanChips,
         ...(companionIdentities.length > 0 ? { companionIdentities } : {}),
       })
+      saveBlackjackSession({
+        bankroll: currentHumanChips,
+        wallet,
+        difficulty: newTier,
+        companionCount,
+      })
       refreshState()
     },
-    [companionCount, tableState.seats, wallet.initialTotalEur, companionIdentities, refreshState],
+    [companionCount, tableState.seats, wallet, companionIdentities, refreshState],
   )
 
   // Change companion count
@@ -224,9 +341,15 @@ export function BlackjackStage({
         humanBankroll: currentHumanChips,
         ...(companionIdentities.length > 0 ? { companionIdentities } : {}),
       })
+      saveBlackjackSession({
+        bankroll: currentHumanChips,
+        wallet,
+        difficulty,
+        companionCount: count,
+      })
       refreshState()
     },
-    [difficulty, tableState.seats, wallet.initialTotalEur, companionIdentities, refreshState],
+    [difficulty, tableState.seats, wallet, companionIdentities, refreshState],
   )
 
   // Chip betting handlers
@@ -271,6 +394,17 @@ export function BlackjackStage({
     if (!table || !isSeated) return undefined
 
     const { phase, activeSeatIndex, seats } = tableState
+
+    // 0. Dealing phase: deal card-by-card sequentially from the shoe
+    if (phase === 'dealing') {
+      const delay = isTurbo ? 70 : 180
+      const timer = setTimeout(() => {
+        table.stepDeal()
+        playSound('card_slide')
+        refreshState()
+      }, delay)
+      return () => clearTimeout(timer)
+    }
 
     // 1. Insurance phase: AI decision
     if (phase === 'insurance') {
@@ -366,8 +500,8 @@ export function BlackjackStage({
     setPreviousBet(currentBet)
     playSound('chip_bet')
 
-    // Start round with human bet
-    table.startRound({ 1: currentBet })
+    // Start round with asynchronous sequential card dealing from the shoe
+    table.startRound({ 1: currentBet }, false)
     playSound('card_slide')
     refreshState()
   }, [currentBet, tableState.seats, playSound, refreshState])
@@ -428,12 +562,49 @@ export function BlackjackStage({
         position: 'relative',
       }}
     >
-      {/* Buy-In "Take a Seat" Modal */}
-      {!isSeated && (
+      {/* Optional Top Mini Bar: Candy Balance & Buy-In Button */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          width: '100%',
+          maxWidth: '920px',
+          padding: '2px 8px',
+          fontSize: '11px',
+          color: '#a1a1aa',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>🍬 Candy Vault:</span>
+          <span style={{ fontWeight: 800, color: '#4ade80' }}>{candyBalance}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowBuyInModal(true)}
+          style={{
+            background: 'rgba(217, 119, 6, 0.15)',
+            border: '1px solid rgba(217, 119, 6, 0.35)',
+            color: '#fef08a',
+            borderRadius: '5px',
+            padding: '2px 8px',
+            fontSize: '10.5px',
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+          title="Exchange Candies for more table chips"
+        >
+          + Deposit Chips
+        </button>
+      </div>
+
+      {/* Buy-In "Take a Seat" Modal (Only if explicitly opened, never a forced jumpscare) */}
+      {showBuyInModal && (
         <BuyInModal
           candyBalance={candyBalance}
           isFirstTimePlayer={isFirstTimePlayer}
           onConfirmBuyIn={handleConfirmBuyIn}
+          onCancel={() => setShowBuyInModal(false)}
         />
       )}
 
@@ -448,17 +619,20 @@ export function BlackjackStage({
         />
       )}
 
-      {/* Strategy Trainer HUD Drawer */}
+      {/* Strategy Trainer HUD Drawer (Docked below header, no overlap) */}
       <TrainerDrawer
         tier={difficulty}
         telemetry={tableState.telemetry}
         optimalAction={optimalAction}
         lastMistake={lastMistake}
+        isOpen={isTrainerOpen}
+        onClose={() => setIsTrainerOpen(false)}
       />
 
       {/* Main Table Felt View */}
       <TableView
         state={tableState}
+        currentBet={currentBet}
         onSelectDifficulty={handleSelectDifficulty}
         onSelectCompanions={handleSelectCompanions}
         isTurbo={isTurbo}
@@ -471,6 +645,11 @@ export function BlackjackStage({
             return next
           })
         }}
+        isTrainerOpen={isTrainerOpen}
+        isTrainerAvailable={difficulty !== 'hard' && difficulty !== 'expert'}
+        onToggleTrainer={() => setIsTrainerOpen((prev) => !prev)}
+        onDropChip={handleAddChip}
+        onClickBetSpot={() => handleAddChip(25)}
         onRequestLeaveTable={() => setShowCashOutModal(true)}
       />
 
@@ -483,6 +662,7 @@ export function BlackjackStage({
             minBet={10}
             maxBet={5000}
             onAddChip={handleAddChip}
+            onSetBet={(amount) => setCurrentBet(amount)}
             onClearBet={handleClearBet}
             onDoubleBet={handleDoubleBet}
             onDeal={handleDeal}
@@ -515,11 +695,15 @@ export function BlackjackStage({
           >
             <span style={{ fontSize: '16px' }}>⏳</span>
             <span>
-              {tableState.phase === 'dealer_turn'
-                ? "Dealer's turn..."
-                : tableState.seats[tableState.activeSeatIndex]?.isHuman
-                  ? 'Your turn'
-                  : `${tableState.seats[tableState.activeSeatIndex]?.profile?.name ?? 'Companion'} is deciding...`}
+              {tableState.phase === 'dealing'
+                ? 'Dealing cards...'
+                : tableState.phase === 'dealer_turn'
+                  ? "Dealer's turn..."
+                  : tableState.phase === 'insurance'
+                    ? `${tableState.seats[tableState.activeSeatIndex]?.profile?.name ?? 'Player'} is deciding insurance...`
+                    : tableState.seats[tableState.activeSeatIndex]?.isHuman
+                      ? 'Your turn'
+                      : `${tableState.seats[tableState.activeSeatIndex]?.profile?.name ?? 'Companion'} is deciding...`}
             </span>
           </div>
         )}

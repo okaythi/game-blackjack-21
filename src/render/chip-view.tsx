@@ -98,7 +98,9 @@ interface ChipProps {
   readonly count?: number
   readonly selected?: boolean
   readonly disabled?: boolean
+  readonly draggable?: boolean
   readonly onClick?: () => void
+  readonly onDragStart?: (e: React.DragEvent<HTMLButtonElement>) => void
 }
 
 export function Chip({
@@ -107,15 +109,20 @@ export function Chip({
   count,
   selected = false,
   disabled = false,
+  draggable = false,
   onClick,
+  onDragStart,
 }: ChipProps) {
   const theme = CHIP_THEMES[denomination]
+  const isMovable = !disabled && draggable
 
   return (
     <button
       type="button"
       className={`chip-btn ${selected ? 'chip-selected' : ''} ${disabled ? 'chip-disabled' : ''}`}
       onClick={disabled ? undefined : onClick}
+      draggable={isMovable}
+      onDragStart={isMovable ? onDragStart : undefined}
       style={{
         width: size,
         height: size,
@@ -123,7 +130,7 @@ export function Chip({
         padding: 0,
         border: 'none',
         background: 'transparent',
-        cursor: disabled ? 'not-allowed' : 'pointer',
+        cursor: disabled ? 'not-allowed' : isMovable ? 'grab' : 'pointer',
         position: 'relative',
         filter: selected
           ? 'drop-shadow(0 0 8px rgba(245, 158, 11, 0.8))'
@@ -131,6 +138,8 @@ export function Chip({
         transform: selected ? 'translateY(-3px) scale(1.08)' : 'scale(1)',
         transition: 'transform 0.15s ease, filter 0.15s ease',
         opacity: disabled ? 0.45 : 1,
+        touchAction: 'none',
+        userSelect: 'none',
       }}
       aria-label={`Bet ${theme.label}`}
     >

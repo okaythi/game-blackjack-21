@@ -1,14 +1,27 @@
-import type { Seat } from '../../engine/types'
+import type { ChipDenomination, Seat } from '../../engine/types'
 import { CardView } from '../card-view'
 import { evaluateHand } from '../../engine/hand'
+import { FlagIcon } from './flag-icon'
 
 interface SeatViewProps {
   readonly seat: Seat
   readonly isTurn: boolean
   readonly isMiddleHuman: boolean
+  readonly pendingBet?: number | undefined
+  readonly onDropChip?: ((denom: ChipDenomination) => void) | undefined
+  readonly onClickBetSpot?: (() => void) | undefined
 }
 
-export function SeatView({ seat, isTurn, isMiddleHuman }: SeatViewProps) {
+export function SeatView({
+  seat,
+  isTurn,
+  isMiddleHuman,
+  pendingBet = 0,
+  onDropChip,
+  onClickBetSpot,
+}: SeatViewProps) {
+  const displayBet = isMiddleHuman && seat.hands.length === 0 && pendingBet > 0 ? pendingBet : seat.currentBet
+
   return (
     <div
       style={{
@@ -16,7 +29,7 @@ export function SeatView({ seat, isTurn, isMiddleHuman }: SeatViewProps) {
         flexDirection: 'column',
         alignItems: 'center',
         gap: '4px',
-        transform: isTurn ? 'scale(1.02)' : 'scale(1)',
+        transform: isTurn ? 'scale(1.03)' : 'scale(1)',
         transition: 'transform 0.2s ease',
       }}
     >
@@ -31,27 +44,52 @@ export function SeatView({ seat, isTurn, isMiddleHuman }: SeatViewProps) {
         }}
       >
         {seat.hands.length === 0 ? (
-          /* Empty Betting Spot Circle */
+          /* Empty / Active Betting Spot Circle */
           <div
+            onDragOver={(e) => {
+              if (isMiddleHuman && onDropChip) {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'copy'
+              }
+            }}
+            onDrop={(e) => {
+              if (isMiddleHuman && onDropChip) {
+                e.preventDefault()
+                const data = e.dataTransfer.getData('text/plain')
+                const denom = Number(data) as ChipDenomination
+                if (!Number.isNaN(denom)) {
+                  onDropChip(denom)
+                }
+              }
+            }}
+            onClick={isMiddleHuman ? onClickBetSpot : undefined}
             style={{
-              width: '52px',
-              height: '52px',
+              width: '56px',
+              height: '56px',
               borderRadius: '50%',
-              border: '2px solid rgba(35, 35, 36, 0.3)',
+              border: displayBet > 0 ? '2px solid #d97706' : '2px dashed rgba(35, 35, 36, 0.35)',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#232324',
-              background: seat.currentBet > 0 ? 'rgba(217, 119, 6, 0.2)' : 'transparent',
+              background: displayBet > 0 ? 'rgba(217, 119, 6, 0.2)' : 'rgba(0, 0, 0, 0.04)',
+              boxShadow: displayBet > 0 ? '0 0 12px rgba(217, 119, 6, 0.4), inset 0 0 8px rgba(0,0,0,0.2)' : 'none',
+              cursor: isMiddleHuman ? 'pointer' : 'default',
+              transition: 'all 0.2s ease',
             }}
+            title={isMiddleHuman ? 'Click or drop chips here to wager' : undefined}
           >
-            {seat.currentBet > 0 ? (
-              <span style={{ fontWeight: 800, fontSize: '12px', color: '#18181b' }}>
-                €{seat.currentBet}
-              </span>
+            {displayBet > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.1 }}>
+                <span style={{ fontSize: '13px' }}>🪙</span>
+                <span style={{ fontWeight: 800, fontSize: '11.5px', color: '#18181b', marginTop: '1px' }}>
+                  €{displayBet}
+                </span>
+              </div>
             ) : (
-              <span style={{ fontSize: '9.5px', opacity: 0.6, fontWeight: 700 }}>BET</span>
+              <span style={{ fontSize: '10px', color: '#52525b', fontWeight: 700, letterSpacing: '0.4px' }}>
+                {isMiddleHuman ? 'BET' : 'READY'}
+              </span>
             )}
           </div>
         ) : (
@@ -67,10 +105,10 @@ export function SeatView({ seat, isTurn, isMiddleHuman }: SeatViewProps) {
                   flexDirection: 'column',
                   alignItems: 'center',
                   position: 'relative',
-                  padding: '2px',
-                  borderRadius: '6px',
-                  background: isActingHand ? 'rgba(245, 158, 11, 0.18)' : 'transparent',
-                  boxShadow: isActingHand ? '0 0 10px rgba(217, 119, 6, 0.35)' : 'none',
+                  padding: '3px',
+                  borderRadius: '8px',
+                  background: isActingHand ? 'rgba(245, 158, 11, 0.22)' : 'transparent',
+                  boxShadow: isActingHand ? '0 0 14px rgba(217, 119, 6, 0.45)' : 'none',
                 }}
               >
                 {/* Hand Total Badge */}
@@ -80,14 +118,17 @@ export function SeatView({ seat, isTurn, isMiddleHuman }: SeatViewProps) {
                       ? '#d97706'
                       : handVal.isBust
                         ? '#dc2626'
-                        : '#232324',
+                        : isActingHand
+                          ? '#d97706'
+                          : '#232324',
                     color: '#ffffff',
                     borderRadius: '999px',
-                    padding: '1px 7px',
+                    padding: '1px 8px',
                     fontSize: '10px',
                     fontWeight: 800,
-                    marginBottom: '2px',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+                    marginBottom: '3px',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+                    letterSpacing: '0.3px',
                   }}
                 >
                   {handVal.isBlackjack
@@ -99,25 +140,27 @@ export function SeatView({ seat, isTurn, isMiddleHuman }: SeatViewProps) {
                         : handVal.total}
                 </div>
 
-                {/* Overlapping Cards */}
+                {/* Staggered Cards Fan (Clear Horizontal Overlap, No 98% Occlusion) */}
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    position: 'relative',
-                    paddingLeft: `${Math.max(0, (hand.cards.length - 1) * 14)}px`,
+                    justifyContent: 'center',
+                    minHeight: '74px',
                   }}
                 >
                   {hand.cards.map((card, cIdx) => (
                     <div
                       key={card.id || cIdx}
                       style={{
-                        position: cIdx === 0 ? 'relative' : 'absolute',
-                        left: `${cIdx * 16}px`,
+                        marginLeft: cIdx === 0 ? 0 : '-28px',
                         zIndex: cIdx + 1,
+                        boxShadow: '0 4px 10px rgba(0,0,0,0.4)',
+                        borderRadius: '7px',
+                        transition: 'all 0.2s ease',
                       }}
                     >
-                      <CardView card={card} width={48} height={68} />
+                      <CardView card={card} width={50} height={72} />
                     </div>
                   ))}
                 </div>
@@ -126,9 +169,13 @@ export function SeatView({ seat, isTurn, isMiddleHuman }: SeatViewProps) {
                 <div
                   style={{
                     fontSize: '10.5px',
-                    fontWeight: 700,
-                    color: '#232324',
-                    marginTop: '2px',
+                    fontWeight: 800,
+                    color: '#18181b',
+                    marginTop: '3px',
+                    background: 'rgba(255, 255, 255, 0.8)',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
                   }}
                 >
                   €{hand.bet}
@@ -148,41 +195,37 @@ export function SeatView({ seat, isTurn, isMiddleHuman }: SeatViewProps) {
           background: isTurn
             ? '#232324'
             : isMiddleHuman
-              ? 'rgba(35, 35, 36, 0.9)'
-              : 'rgba(35, 35, 36, 0.78)',
+              ? 'rgba(35, 35, 36, 0.92)'
+              : 'rgba(35, 35, 36, 0.82)',
           color: isTurn ? '#fef08a' : '#faf7f2',
-          padding: '3px 8px',
-          borderRadius: '7px',
-          border: `1.5px solid ${isTurn ? '#d97706' : 'transparent'}`,
-          boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-          minWidth: '78px',
+          padding: '4px 10px',
+          borderRadius: '8px',
+          border: `1.5px solid ${isTurn ? '#d97706' : 'rgba(255,255,255,0.08)'}`,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          minWidth: '84px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', fontWeight: 700 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: 700 }}>
           {isMiddleHuman ? (
             <span>👤 You</span>
           ) : (
             <>
-              {/* Reliable ISO Country Code Badge (works universally on Windows, Mac, Linux) */}
-              <span
-                style={{
-                  background: isTurn ? '#d97706' : '#52525b',
-                  color: '#ffffff',
-                  borderRadius: '3px',
-                  padding: '1px 4px',
-                  fontSize: '9px',
-                  fontWeight: 800,
-                  letterSpacing: '0.4px',
-                }}
-                title={seat.profile?.country}
-              >
-                {seat.profile?.code ?? 'AI'}
-              </span>
+              {/* Reliable SVG Country Flag */}
+              <FlagIcon code={seat.profile?.code} size={18} title={seat.profile?.country} />
               <span>{seat.profile?.name ?? 'Companion'}</span>
             </>
           )}
         </div>
-        <div style={{ fontSize: '10.5px', color: isTurn ? '#fef08a' : '#fbbf24', fontWeight: 800, marginTop: '1px' }}>
+
+        {/* Bankroll Chips */}
+        <div
+          style={{
+            fontSize: '10.5px',
+            color: isTurn ? '#ffffff' : '#fbbf24',
+            fontWeight: 800,
+            marginTop: '1px',
+          }}
+        >
           €{seat.bankroll.toLocaleString()}
         </div>
       </div>

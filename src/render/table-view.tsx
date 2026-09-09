@@ -1,28 +1,40 @@
-import type { DifficultyTier, TableState } from '../engine/types'
+import type { ChipDenomination, DifficultyTier, TableState } from '../engine/types'
 import { TableHeader } from './table/table-header'
 import { DealerArea } from './table/dealer-area'
 import { SeatView } from './table/seat-view'
 
 interface TableViewProps {
   readonly state: TableState
+  readonly currentBet?: number
   readonly onSelectDifficulty: (tier: DifficultyTier) => void
   readonly onSelectCompanions: (count: 1 | 2 | 3) => void
   readonly isTurbo: boolean
   readonly onToggleTurbo: () => void
   readonly isMuted: boolean
   readonly onToggleMute: () => void
+  readonly isTrainerOpen?: boolean
+  readonly isTrainerAvailable?: boolean
+  readonly onToggleTrainer?: () => void
+  readonly onDropChip?: (denom: ChipDenomination) => void
+  readonly onClickBetSpot?: () => void
   readonly onReloadBankroll?: (() => void) | undefined
   readonly onRequestLeaveTable?: (() => void) | undefined
 }
 
 export function TableView({
   state,
+  currentBet = 0,
   onSelectDifficulty,
   onSelectCompanions,
   isTurbo,
   onToggleTurbo,
   isMuted,
   onToggleMute,
+  isTrainerOpen = false,
+  isTrainerAvailable = true,
+  onToggleTrainer,
+  onDropChip,
+  onClickBetSpot,
   onRequestLeaveTable,
 }: TableViewProps) {
   const { rules, difficulty, seats, activeSeatIndex, dealer, phase } = state
@@ -39,17 +51,20 @@ export function TableView({
         boxSizing: 'border-box',
       }}
     >
-      {/* Top Chrome Bar: Difficulty, Companions, Turbo, Audio, Cash Out */}
+      {/* Top Chrome Bar: Difficulty, Companions, Speed, Trainer, Audio, Cash Out */}
       <TableHeader
         difficulty={difficulty}
         companionCount={seats.length - 1}
         phase={phase}
         isTurbo={isTurbo}
         isMuted={isMuted}
+        isTrainerOpen={isTrainerOpen}
+        isTrainerAvailable={isTrainerAvailable}
         onSelectDifficulty={onSelectDifficulty}
         onSelectCompanions={onSelectCompanions}
         onToggleTurbo={onToggleTurbo}
         onToggleMute={onToggleMute}
+        onToggleTrainer={onToggleTrainer}
         onRequestLeaveTable={onRequestLeaveTable}
       />
 
@@ -172,6 +187,9 @@ export function TableView({
                 seat={seat}
                 isTurn={isTurn}
                 isMiddleHuman={seat.isHuman}
+                pendingBet={currentBet}
+                onDropChip={onDropChip}
+                onClickBetSpot={onClickBetSpot}
               />
             )
           })}

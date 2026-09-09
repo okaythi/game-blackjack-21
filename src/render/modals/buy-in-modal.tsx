@@ -9,12 +9,14 @@ interface BuyInModalProps {
   readonly candyBalance: number
   readonly isFirstTimePlayer: boolean
   readonly onConfirmBuyIn: (depositedCandies: number, receivedChipsEur: number, bonusEur: number) => void
+  readonly onCancel?: () => void
 }
 
 export function BuyInModal({
   candyBalance,
   isFirstTimePlayer,
   onConfirmBuyIn,
+  onCancel,
 }: BuyInModalProps) {
   const { eur: maxPossibleEur } = candiesToEur(candyBalance)
 
@@ -52,8 +54,29 @@ export function BuyInModal({
           color: '#f4f4f5',
           textAlign: 'center',
           boxSizing: 'border-box',
+          position: 'relative',
         }}
       >
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              position: 'absolute',
+              top: '14px',
+              right: '16px',
+              background: 'transparent',
+              border: 'none',
+              color: '#a1a1aa',
+              fontSize: '18px',
+              cursor: 'pointer',
+              padding: '4px',
+            }}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        )}
         <div style={{ fontSize: '32px', marginBottom: '8px' }}>♠️ 21 ♥️</div>
         <h2
           style={{

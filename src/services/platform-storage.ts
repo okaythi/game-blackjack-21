@@ -1,129 +1,274 @@
 /**
  * Platform Storage Bridge for Blackjack 21
  *
- * Interacts with Nixlabs local storage protocol (prefixed with 'nixlabs.stats.<slug>')
- * to synchronize real Candy balances, detect first-time player status, and persist records.
+ * Interacts with server-authoritative Cloudflare D1 database APIs
+ * (/api/blackjack/session, /api/blackjack/deposit, /api/blackjack/cashout)
+ * to ensure player bankrolls, candies, and session state are persisted
+ * reliably in the database and never lost on refresh.
  */
 
-const STORAGE_PREFIX = 'nixlabs.'
-const BLACKJACK_SLUG = 'blackjack-21'
-
-const PLATFORM_GAME_SLUGS = [
-  'blackjack-21',
-  'avoid-the-spikes',
-  'card-jitsu',
-  'pong',
-  'fl-tron-3',
-  'tetris',
-] as const
-
-interface StoredStats {
-  plays?: number
-  best?: number | null
-  candy?: number
+export interface ActiveWallet {
+  depositedEur: number
+  bonusEur: number
+  initialTotalEur: number
 }
 
-function readStoredStats(slug: string): StoredStats {
-  if (typeof window === 'undefined') return {}
-  try {
-    // 1. Try prefixed key ('nixlabs.stats.<slug>')
-    const prefixedRaw = window.localStorage.getItem(`${STORAGE_PREFIX}stats.${slug}`)
-    if (prefixedRaw) {
-      return JSON.parse(prefixedRaw) as StoredStats
-    }
-    // 2. Try raw fallback ('stats.<slug>')
-    const raw = window.localStorage.getItem(`stats.${slug}`)
-    if (raw) {
-      return JSON.parse(raw) as StoredStats
-    }
-  } catch {
-    // Ignore storage parse errors
+export interface BlackjackSessionState {
+  bankroll: number
+  wallet: ActiveWallet
+  difficulty?: 'easy' | 'normal' | 'hard' | 'expert'
+  companionCount?: 1 | 2 | 3
+  firstTimeGranted?: boolean
+}
+
+export interface BlackjackSessionResult {
+  ok: boolean
+  session: BlackjackSessionState
+  candy: number
+  isFirstTime?: boolean
+}
+
+export interface BlackjackDepositResult {
+  ok: boolean
+  candy: number
+  bankroll: number
+  wallet: ActiveWallet
+  error?: string
+}
+
+export interface BlackjackCashOutResult {
+  ok: boolean
+  cashedOutEur: number
+  cashedOutCandies: number
+  candy: number
+  bankroll: number
+  wallet: ActiveWallet
+  error?: string
+}
+
+// In-memory runtime cache for seamless offline/standalone testing
+let runtimeMemorySession: BlackjackSessionState = {
+  bankroll: 500,
+  wallet: { depositedEur: 0, bonusEur: 500, initialTotalEur: 500 },
+  difficulty: 'normal',
+  companionCount: 2,
+  firstTimeGranted: true,
+}
+let runtimeCandyBalance = 151
+
+/**
+ * Fetches server-authoritative Blackjack table session from D1 database.
+ */
+export async function fetchBlackjackSession(): Promise<BlackjackSessionResult> {
+  if (typeof window === 'undefined') {
+    return { ok: true, session: runtimeMemorySession, candy: runtimeCandyBalance, isFirstTime: false }
   }
-  return {}
+
+  try {
+    const res = await fetch('/api/blackjack/session', {
+      headers: { accept: 'application/json', 'x-nixlabs-client': '1' },
+      credentials: 'same-origin',
+    })
+
+    if (res.ok) {
+      const data = (await res.json()) as {
+        ok: boolean
+        session: BlackjackSessionState
+        candy: number
+        isFirstTime?: boolean
+      }
+      if (data.ok && data.session) {
+        runtimeMemorySession = data.session
+        runtimeCandyBalance = data.candy ?? runtimeCandyBalance
+        return {
+          ok: true,
+          session: data.session,
+          candy: data.candy ?? runtimeCandyBalance,
+          isFirstTime: data.isFirstTime ?? false,
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Blackjack] Network error loading server session, using fallback:', err)
+  }
+
+  return {
+    ok: false,
+    session: runtimeMemorySession,
+    candy: runtimeCandyBalance,
+    isFirstTime: false,
+  }
 }
 
-function writeStoredStats(slug: string, patch: Partial<StoredStats>): void {
+let syncTimeout: any = null
+
+/**
+ * Persists active table session to D1 database asynchronously.
+ */
+export function saveBlackjackSession(session: BlackjackSessionState): void {
+  runtimeMemorySession = { ...session }
   if (typeof window === 'undefined') return
-  try {
-    const current = readStoredStats(slug)
-    const next: StoredStats = {
-      plays: patch.plays ?? current.plays ?? 0,
-      best: patch.best !== undefined ? patch.best : (current.best ?? null),
-      candy: patch.candy !== undefined ? patch.candy : (current.candy ?? 0),
+
+  if (syncTimeout) {
+    clearTimeout(syncTimeout)
+  }
+
+  syncTimeout = setTimeout(async () => {
+    try {
+      await fetch('/api/blackjack/session', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-nixlabs-client': '1',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          bankroll: session.bankroll,
+          wallet: session.wallet,
+          difficulty: session.difficulty,
+          companionCount: session.companionCount,
+        }),
+      })
+    } catch (err) {
+      console.warn('[Blackjack] Failed to sync session to D1:', err)
     }
-    const serialized = JSON.stringify(next)
-    window.localStorage.setItem(`${STORAGE_PREFIX}stats.${slug}`, serialized)
-  } catch {
-    // Ignore storage quota errors
+  }, 200)
+}
+
+/**
+ * Converts player Candies to table EUR chips in D1 database (3 Candies = 1 EUR).
+ */
+export async function depositCandiesToChips(candies: number): Promise<BlackjackDepositResult> {
+  if (typeof window === 'undefined') {
+    const eur = Math.floor(candies / 3)
+    runtimeCandyBalance = Math.max(0, runtimeCandyBalance - eur * 3)
+    runtimeMemorySession.bankroll += eur
+    runtimeMemorySession.wallet.depositedEur += eur
+    runtimeMemorySession.wallet.initialTotalEur += eur
+    return {
+      ok: true,
+      candy: runtimeCandyBalance,
+      bankroll: runtimeMemorySession.bankroll,
+      wallet: runtimeMemorySession.wallet,
+    }
+  }
+
+  try {
+    const res = await fetch('/api/blackjack/deposit', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-nixlabs-client': '1',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ candies }),
+    })
+
+    if (res.ok) {
+      const data = (await res.json()) as BlackjackDepositResult
+      if (data.ok) {
+        runtimeCandyBalance = data.candy
+        runtimeMemorySession.bankroll = data.bankroll
+        runtimeMemorySession.wallet = data.wallet
+
+        window.dispatchEvent(
+          new CustomEvent('nx:candy-updated', {
+            detail: { candy: data.candy },
+          }),
+        )
+
+        return data
+      }
+    }
+  } catch (err) {
+    console.error('[Blackjack] Error depositing candies to chips:', err)
+  }
+
+  return {
+    ok: false,
+    candy: runtimeCandyBalance,
+    bankroll: runtimeMemorySession.bankroll,
+    wallet: runtimeMemorySession.wallet,
+    error: 'deposit-failed',
   }
 }
 
 /**
- * Returns current player Candy balance from platform storage.
+ * Cashes out active table chips back into player Candies in D1 database.
+ */
+export async function cashOutChips(): Promise<BlackjackCashOutResult> {
+  if (typeof window === 'undefined') {
+    const { bankroll, wallet } = runtimeMemorySession
+    let cashoutEur = 0
+    if (bankroll > wallet.initialTotalEur) {
+      cashoutEur = wallet.depositedEur + (bankroll - wallet.initialTotalEur)
+    } else if (wallet.initialTotalEur > 0) {
+      cashoutEur = Math.floor(bankroll * (wallet.depositedEur / wallet.initialTotalEur))
+    }
+    const candiesAwarded = cashoutEur * 3
+    runtimeCandyBalance += candiesAwarded
+    runtimeMemorySession.bankroll = 0
+    runtimeMemorySession.wallet = { bonusEur: 0, depositedEur: 0, initialTotalEur: 0 }
+    return {
+      ok: true,
+      cashedOutEur: cashoutEur,
+      cashedOutCandies: candiesAwarded,
+      candy: runtimeCandyBalance,
+      bankroll: 0,
+      wallet: runtimeMemorySession.wallet,
+    }
+  }
+
+  try {
+    const res = await fetch('/api/blackjack/cashout', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-nixlabs-client': '1',
+      },
+      credentials: 'same-origin',
+    })
+
+    if (res.ok) {
+      const data = (await res.json()) as BlackjackCashOutResult
+      if (data.ok) {
+        runtimeCandyBalance = data.candy
+        runtimeMemorySession.bankroll = 0
+        runtimeMemorySession.wallet = data.wallet
+
+        window.dispatchEvent(
+          new CustomEvent('nx:candy-updated', {
+            detail: { candy: data.candy },
+          }),
+        )
+
+        return data
+      }
+    }
+  } catch (err) {
+    console.error('[Blackjack] Error cashing out chips:', err)
+  }
+
+  return {
+    ok: false,
+    cashedOutEur: 0,
+    cashedOutCandies: 0,
+    candy: runtimeCandyBalance,
+    bankroll: 0,
+    wallet: { bonusEur: 0, depositedEur: 0, initialTotalEur: 0 },
+    error: 'cashout-failed',
+  }
+}
+
+/**
+ * Returns current player Candy balance from memory or default.
  */
 export function getLocalCandyBalance(): number {
-  if (typeof window === 'undefined') return 0
-  for (const slug of PLATFORM_GAME_SLUGS) {
-    const stats = readStoredStats(slug)
-    if (typeof stats.candy === 'number' && stats.candy >= 0) {
-      return stats.candy
-    }
-  }
-  return 0
+  return runtimeCandyBalance
 }
 
 /**
- * Returns true if the player has never finished or started a Blackjack 21 session.
- */
-export function isFirstTimeBlackjackPlayer(): boolean {
-  if (typeof window === 'undefined') return true
-  const stats = readStoredStats(BLACKJACK_SLUG)
-  return !stats.plays || stats.plays === 0
-}
-
-/**
- * Increments the plays counter for Blackjack 21.
- */
-export function recordBlackjackPlay(): void {
-  const stats = readStoredStats(BLACKJACK_SLUG)
-  const plays = (stats.plays ?? 0) + 1
-  writeStoredStats(BLACKJACK_SLUG, { plays })
-}
-
-/**
- * Updates Candy balance across all platform game keys and dispatches event.
- */
-export function adjustCandyBalance(deltaCandies: number): number {
-  const current = getLocalCandyBalance()
-  const nextCandy = Math.max(0, current + deltaCandies)
-
-  for (const slug of PLATFORM_GAME_SLUGS) {
-    writeStoredStats(slug, { candy: nextCandy })
-  }
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('nx:candy-updated', {
-        detail: { candy: nextCandy },
-      }),
-    )
-  }
-
-  return nextCandy
-}
-
-/**
- * Records a peak bankroll highscore if it exceeds the previous personal best.
- */
-export function recordBlackjackPeakScore(score: number): void {
-  const stats = readStoredStats(BLACKJACK_SLUG)
-  if (stats.best === null || stats.best === undefined || score > stats.best) {
-    writeStoredStats(BLACKJACK_SLUG, { best: score })
-  }
-}
-
-/**
- * Subscribes to Candy balance changes via window event or storage event.
+ * Subscribes to Candy balance updates across the platform.
  */
 export function subscribeCandyBalance(onUpdate: (balance: number) => void): () => void {
   if (typeof window === 'undefined') return () => {}
@@ -131,23 +276,14 @@ export function subscribeCandyBalance(onUpdate: (balance: number) => void): () =
   const handleCustomEvent = (e: Event) => {
     const custom = e as CustomEvent<{ candy?: number }>
     if (typeof custom.detail?.candy === 'number') {
+      runtimeCandyBalance = custom.detail.candy
       onUpdate(custom.detail.candy)
-    } else {
-      onUpdate(getLocalCandyBalance())
-    }
-  }
-
-  const handleStorage = (e: StorageEvent) => {
-    if (e.key?.includes('stats')) {
-      onUpdate(getLocalCandyBalance())
     }
   }
 
   window.addEventListener('nx:candy-updated', handleCustomEvent)
-  window.addEventListener('storage', handleStorage)
 
   return () => {
     window.removeEventListener('nx:candy-updated', handleCustomEvent)
-    window.removeEventListener('storage', handleStorage)
   }
 }

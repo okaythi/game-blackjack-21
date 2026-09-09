@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { ActionType, DifficultyTier, TableTelemetry } from '../engine/types'
 
 interface TrainerDrawerProps {
@@ -6,7 +5,8 @@ interface TrainerDrawerProps {
   readonly telemetry: TableTelemetry
   readonly optimalAction?: ActionType | undefined
   readonly lastMistake?: string | null
-  readonly defaultOpen?: boolean
+  readonly isOpen: boolean
+  readonly onClose: () => void
 }
 
 export function TrainerDrawer({
@@ -14,14 +14,17 @@ export function TrainerDrawer({
   telemetry,
   optimalAction,
   lastMistake = null,
-  defaultOpen = false,
+  isOpen,
+  onClose,
 }: TrainerDrawerProps) {
   // If Hard/Expert, strictly disabled
   if (tier === 'expert' || tier === 'hard') {
     return null
   }
 
-  const [isOpen, setIsOpen] = useState(tier === 'easy' || defaultOpen)
+  if (!isOpen) {
+    return null
+  }
 
   const actionLabels: Record<ActionType, { text: string; color: string }> = {
     hit: { text: 'HIT', color: '#16a34a' },
@@ -39,62 +42,57 @@ export function TrainerDrawer({
       aria-label="Strategy Trainer and Card Telemetry"
       style={{
         position: 'absolute',
-        top: '12px',
+        top: '40px',
         right: '12px',
-        zIndex: 40,
+        zIndex: 50,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'flex-end',
       }}
     >
-      {/* Toggle Button */}
-      <button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
+      {/* Drawer Panel */}
+      <div
         style={{
-          background: isOpen ? '#27272a' : 'rgba(24, 24, 27, 0.85)',
-          color: '#fef08a',
+          background: 'rgba(24, 24, 27, 0.96)',
           border: '1px solid #d97706',
-          borderRadius: '8px',
-          padding: '6px 12px',
-          fontSize: '12px',
-          fontWeight: 700,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-          backdropFilter: 'blur(6px)',
+          borderRadius: '12px',
+          padding: '12px 16px',
+          width: '240px',
+          boxShadow: '0 10px 25px rgba(0, 0, 0, 0.6)',
+          backdropFilter: 'blur(10px)',
+          color: '#e4e4e7',
+          fontSize: '12.5px',
         }}
       >
-        <span>🎓</span>
-        <span>{isOpen ? 'Close Trainer' : 'Strategy Trainer'}</span>
-      </button>
-
-      {/* Drawer Panel */}
-      {isOpen && (
         <div
           style={{
-            marginTop: '8px',
-            background: 'rgba(24, 24, 27, 0.96)',
-            border: '1px solid #d97706',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            width: '240px',
-            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.6)',
-            backdropFilter: 'blur(10px)',
-            color: '#e4e4e7',
-            fontSize: '12.5px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '8px',
+            borderBottom: '1px solid rgba(255,255,255,0.1)',
+            paddingBottom: '6px',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '6px' }}>
-            <strong style={{ color: '#fef08a', fontSize: '12px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-              Trainer Telemetry
-            </strong>
-            <span style={{ fontSize: '11px', color: '#a1a1aa' }}>
-              {tier === 'easy' ? 'Unlocked' : 'Practice'}
-            </span>
-          </div>
+          <strong style={{ color: '#fef08a', fontSize: '12px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+            Trainer Telemetry
+          </strong>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#a1a1aa',
+              fontSize: '13px',
+              cursor: 'pointer',
+              padding: '0 4px',
+            }}
+            title="Close Trainer"
+          >
+            ✕
+          </button>
+        </div>
 
           {/* Optimal Action Hint */}
           {optimalAction && (
@@ -182,7 +180,6 @@ export function TrainerDrawer({
             </div>
           )}
         </div>
-      )}
-    </aside>
-  )
-}
+      </aside>
+    )
+  }

@@ -6,10 +6,13 @@ interface TableHeaderProps {
   readonly phase: RoundPhase
   readonly isTurbo: boolean
   readonly isMuted: boolean
+  readonly isTrainerOpen?: boolean | undefined
+  readonly isTrainerAvailable?: boolean | undefined
   readonly onSelectDifficulty: (tier: DifficultyTier) => void
   readonly onSelectCompanions: (count: 1 | 2 | 3) => void
   readonly onToggleTurbo: () => void
   readonly onToggleMute: () => void
+  readonly onToggleTrainer?: (() => void) | undefined
   readonly onRequestLeaveTable?: (() => void) | undefined
 }
 
@@ -19,10 +22,13 @@ export function TableHeader({
   phase,
   isTurbo,
   isMuted,
+  isTrainerOpen = false,
+  isTrainerAvailable = true,
   onSelectDifficulty,
   onSelectCompanions,
   onToggleTurbo,
   onToggleMute,
+  onToggleTrainer,
   onRequestLeaveTable,
 }: TableHeaderProps) {
   const canModifyTable = phase === 'betting' || phase === 'round_over'
@@ -62,18 +68,19 @@ export function TableHeader({
             <button
               key={tier.id}
               type="button"
-              title={tier.title}
+              title={canModifyTable ? tier.title : 'Tier locked during round'}
               disabled={!canModifyTable}
               onClick={() => onSelectDifficulty(tier.id)}
               style={{
                 background: isActive ? '#d97706' : 'rgba(255,255,255,0.06)',
-                color: isActive ? '#ffffff' : '#a1a1aa',
+                color: isActive ? '#ffffff' : canModifyTable ? '#a1a1aa' : '#52525b',
                 border: 'none',
                 borderRadius: '4px',
                 padding: '2px 6px',
                 fontSize: '10.5px',
                 fontWeight: 700,
                 cursor: canModifyTable ? 'pointer' : 'not-allowed',
+                opacity: canModifyTable ? 1 : 0.5,
                 textTransform: 'capitalize',
               }}
             >
@@ -83,25 +90,27 @@ export function TableHeader({
         })}
       </div>
 
-      {/* Right: Companions, Turbo, Audio & Cash Out */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      {/* Right: Companions, Speed Segmented Control, Trainer, Audio & Cash Out */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
           <span style={{ color: '#a1a1aa' }}>Companions:</span>
           {([1, 2, 3] as const).map((cnt) => (
             <button
               key={cnt}
               type="button"
+              title={canModifyTable ? undefined : 'Companions locked during round'}
               disabled={!canModifyTable}
               onClick={() => onSelectCompanions(cnt)}
               style={{
                 background: companionCount === cnt ? '#d97706' : 'rgba(255,255,255,0.06)',
-                color: companionCount === cnt ? '#ffffff' : '#a1a1aa',
+                color: companionCount === cnt ? '#ffffff' : canModifyTable ? '#a1a1aa' : '#52525b',
                 border: 'none',
                 borderRadius: '4px',
                 padding: '2px 5px',
                 fontSize: '10.5px',
                 fontWeight: 700,
                 cursor: canModifyTable ? 'pointer' : 'not-allowed',
+                opacity: canModifyTable ? 1 : 0.5,
               }}
             >
               {cnt}
@@ -109,27 +118,77 @@ export function TableHeader({
           ))}
         </div>
 
-        {/* Turbo Toggle */}
-        <button
-          type="button"
-          onClick={onToggleTurbo}
+        {/* Speed Segmented Control (Intuitive Normal vs Turbo) */}
+        <div
           style={{
-            background: isTurbo ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.06)',
-            color: isTurbo ? '#fef08a' : '#a1a1aa',
-            border: `1px solid ${isTurbo ? '#d97706' : 'rgba(255,255,255,0.1)'}`,
-            borderRadius: '5px',
-            padding: '2px 6px',
-            fontSize: '10.5px',
-            fontWeight: 700,
-            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '3px',
+            background: 'rgba(255,255,255,0.06)',
+            borderRadius: '6px',
+            padding: '2px',
+            gap: '2px',
+            border: '1px solid rgba(255,255,255,0.08)',
           }}
         >
-          <span>⚡</span>
-          <span>{isTurbo ? 'Turbo' : 'Normal'}</span>
-        </button>
+          <span style={{ color: '#71717a', fontSize: '9.5px', padding: '0 3px', fontWeight: 600 }}>Speed</span>
+          <button
+            type="button"
+            onClick={() => isTurbo && onToggleTurbo()}
+            style={{
+              background: !isTurbo ? '#d97706' : 'transparent',
+              color: !isTurbo ? '#ffffff' : '#a1a1aa',
+              border: 'none',
+              borderRadius: '4px',
+              padding: '2px 5px',
+              fontSize: '10px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Normal
+          </button>
+          <button
+            type="button"
+            onClick={() => !isTurbo && onToggleTurbo()}
+            style={{
+              background: isTurbo ? '#d97706' : 'transparent',
+              color: isTurbo ? '#ffffff' : '#a1a1aa',
+              border: 'none',
+              borderRadius: '4px',
+              padding: '2px 5px',
+              fontSize: '10px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            ⚡ Turbo
+          </button>
+        </div>
+
+        {/* Strategy Trainer Toggle Button (Integrated directly into header) */}
+        {isTrainerAvailable && onToggleTrainer && (
+          <button
+            type="button"
+            onClick={onToggleTrainer}
+            style={{
+              background: isTrainerOpen ? '#d97706' : 'rgba(255,255,255,0.06)',
+              color: isTrainerOpen ? '#ffffff' : '#fef08a',
+              border: '1px solid ' + (isTrainerOpen ? '#b45309' : 'rgba(217, 119, 6, 0.4)'),
+              borderRadius: '5px',
+              padding: '2px 7px',
+              fontSize: '10.5px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px',
+            }}
+            title="Toggle Strategy Trainer & Hi-Lo Telemetry"
+          >
+            <span>🎓</span>
+            <span>Trainer</span>
+          </button>
+        )}
 
         {/* Audio Mute */}
         <button
@@ -164,6 +223,7 @@ export function TableHeader({
               fontSize: '10.5px',
               fontWeight: 700,
               cursor: canModifyTable ? 'pointer' : 'not-allowed',
+              opacity: canModifyTable ? 1 : 0.5,
             }}
           >
             Cash Out
