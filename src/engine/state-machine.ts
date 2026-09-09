@@ -1,12 +1,11 @@
 /**
  * Blackjack 21 — Multi-Seat Table State Machine
- * 
- * Manages game flow, turn order, legal actions, dealer peek, insurance,
+ *
+ * Orchestrates game flow, turn order, legal actions, dealer peek, insurance,
  * splitting/doubling/surrender, dealer drawing, and payout resolutions across
  * 1 human player (middle seat) and 1 to 3 AI companions.
  */
 
-import { createAIProfile } from './companion-names'
 import { Shoe } from './cards'
 import {
   canDoubleHand,
@@ -20,9 +19,13 @@ import {
 import { getAIAction, getAIBetAmount, getAIInsuranceDecision } from './ai/ai-decision'
 import { getBasicStrategyAction } from './ai/basic-strategy'
 import { getRulesForDifficulty } from './rules'
+import { createTableSeats } from './state/seat-factory'
+import { evaluateHandPayout } from './state/payouts'
+import { stepDealerTurn } from './state/dealer-turn'
+import { buildAIProfile } from './ai/profile'
+import { getOfflineCompanionSeed, type CompanionIdentity } from '../services/companion-client'
 import type {
   ActionType,
-  Card,
   DealerHand,
   DifficultyTier,
   LegalActions,
@@ -35,10 +38,11 @@ import type {
 } from './types'
 
 export interface TableConfig {
-  readonly difficulty?: DifficultyTier
-  readonly companionCount?: 1 | 2 | 3
-  readonly humanBankroll?: number
-  readonly customRules?: Partial<TableRules>
+  readonly difficulty?: DifficultyTier | undefined
+  readonly companionCount?: 1 | 2 | 3 | undefined
+  readonly humanBankroll?: number | undefined
+  readonly customRules?: Partial<TableRules> | undefined
+  readonly companionIdentities?: readonly CompanionIdentity[] | undefined
 }
 
 export class BlackjackTable {
@@ -53,6 +57,7 @@ export class BlackjackTable {
   private lastResolutions: RoundResolution[] = []
   private roundCount: number = 0
   private shoeReshufflePending: boolean = false
+  private companionIdentities?: readonly CompanionIdentity[] | undefined
 
   // Queue of seats pending insurance response during 'insurance' phase
   private insuranceSeatQueue: number[] = []
@@ -61,66 +66,20 @@ export class BlackjackTable {
     this.difficulty = config.difficulty ?? 'normal'
     const baseRules = getRulesForDifficulty(this.difficulty)
     this.rules = config.customRules ? { ...baseRules, ...config.customRules } : baseRules
+    this.companionIdentities = config.companionIdentities
 
     this.shoe = new Shoe(this.rules.deckCount, this.rules.cutCardPenetration)
     this.dealer = { cards: [], holeCardHidden: true }
 
     const companionCount = config.companionCount ?? 2
-    const humanBankroll = config.humanBankroll ?? 1000
+    const humanBankroll = config.humanBankroll ?? 500
 
-    this.seats = this.initializeSeats(this.difficulty, companionCount, humanBankroll)
-  }
-
-  /**
-   * Initializes seats ensuring Human is always in the Middle seat:
-   * - 1 companion (2 seats): Seat 0 = AI, Seat 1 = Human (Middle)
-   * - 2 companions (3 seats): Seat 0 = AI, Seat 1 = Human (Middle), Seat 2 = AI
-   * - 3 companions (4 seats): Seat 0 = AI, Seat 1 = Human (Middle), Seat 2 = AI, Seat 3 = AI
-   */
-  private initializeSeats(
-    difficulty: DifficultyTier,
-    companionCount: number,
-    humanBankroll: number,
-  ): Seat[] {
-    const seats: Seat[] = []
-    const usedNames = new Set<string>()
-
-    const totalSeats = companionCount + 1
-    // Human is always Seat Index 1 (Middle)
-    const humanIndex = 1
-
-    for (let i = 0; i < totalSeats; i++) {
-      if (i === humanIndex) {
-        seats.push({
-          id: 'seat_human',
-          index: i,
-          isHuman: true,
-          bankroll: humanBankroll,
-          currentBet: 0,
-          insuranceBet: 0,
-          hands: [],
-          activeHandIndex: 0,
-        })
-      } else {
-        const profile = createAIProfile(difficulty, i, usedNames)
-        usedNames.add(profile.name)
-        const startingBankroll = profile.baseMinBet * 40
-
-        seats.push({
-          id: profile.id,
-          index: i,
-          isHuman: false,
-          profile,
-          bankroll: startingBankroll,
-          currentBet: 0,
-          insuranceBet: 0,
-          hands: [],
-          activeHandIndex: 0,
-        })
-      }
-    }
-
-    return seats
+    this.seats = createTableSeats({
+      difficulty: this.difficulty,
+      companionCount,
+      humanBankroll,
+      companionIdentities: this.companionIdentities,
+    })
   }
 
   /**
@@ -140,6 +99,25 @@ export class BlackjackTable {
       roundCount: this.roundCount,
       shoeReshufflePending: this.shoeReshufflePending,
     }
+  }
+
+  /**
+   * Sets or updates the companion identities from the Cloudflare Worker API.
+   */
+  setCompanionIdentities(identities: readonly CompanionIdentity[]): void {
+    this.companionIdentities = identities
+    let compIdx = 0
+    this.seats = this.seats.map((seat, i) => {
+      if (seat.isHuman) return seat
+      const id = identities[compIdx] ?? getOfflineCompanionSeed(compIdx)
+      compIdx++
+      const profile = buildAIProfile(id, this.difficulty, i)
+      return {
+        ...seat,
+        id: profile.id,
+        profile,
+      }
+    })
   }
 
   /**
@@ -166,7 +144,6 @@ export class BlackjackTable {
   /**
    * Starts a new round.
    * If bets are provided, sets them; otherwise ensures all active seats have valid bets.
-   * If shoe reshuffle is pending, resets the shoe.
    */
   startRound(bets?: Record<number, number> | Map<number, number>): void {
     if (this.phase !== 'betting' && this.phase !== 'round_over') {
@@ -227,119 +204,99 @@ export class BlackjackTable {
           activeHandIndex: 0,
         }
       }
-      return {
-        ...seat,
-        insuranceBet: 0,
-        hands: [],
-        activeHandIndex: 0,
-      }
+      return { ...seat, insuranceBet: 0, hands: [], activeHandIndex: 0 }
     })
 
-    this.lastResolutions = []
     this.dealer = { cards: [], holeCardHidden: true }
+    this.lastResolutions = []
     this.phase = 'dealing'
 
-    // Deal initial cards: 2 cards each to active seats, 1 upcard + 1 hole card to dealer
+    // Deal two cards to each active seat and dealer
     this.dealInitialCards()
-
-    // Evaluate initial round state (Check for Ace upcard -> Insurance, or 10-value -> Peek)
-    this.evaluatePostDeal()
   }
 
   private dealInitialCards(): void {
-    // Deal 1st card to each active player seat
-    for (let i = 0; i < this.seats.length; i++) {
-      const seat = this.seats[i]!
-      if (seat.hands.length > 0) {
-        const card = this.shoe.dealCard(true)
-        this.updateSeatHandCards(i, 0, [card])
+    // Round 1 of dealing: 1 card to each active player, 1 to dealer (upcard)
+    this.seats = this.seats.map((seat) => {
+      if (seat.hands.length === 0) return seat
+      const card = this.shoe.dealCard(true)
+      const hand = seat.hands[0]!
+      return {
+        ...seat,
+        hands: [{ ...hand, cards: [...hand.cards, card] }],
       }
-    }
-
-    // Deal dealer upcard (visible)
+    })
     const dealerUpcard = this.shoe.dealCard(true)
-    this.dealer = { cards: [dealerUpcard], holeCardHidden: true }
-
-    // Deal 2nd card to each active player seat
-    for (let i = 0; i < this.seats.length; i++) {
-      const seat = this.seats[i]!
-      if (seat.hands.length > 0) {
-        const card = this.shoe.dealCard(true)
-        const currentCards = seat.hands[0]!.cards
-        this.updateSeatHandCards(i, 0, [...currentCards, card])
-      }
+    this.dealer = {
+      ...this.dealer,
+      cards: [...this.dealer.cards, dealerUpcard],
     }
 
-    // Deal dealer hole card (hidden from Hi-Lo count until revealed)
+    // Round 2 of dealing: 1 card to each active player, 1 hole card to dealer (hidden)
+    this.seats = this.seats.map((seat) => {
+      if (seat.hands.length === 0) return seat
+      const card = this.shoe.dealCard(true)
+      const hand = seat.hands[0]!
+      return {
+        ...seat,
+        hands: [{ ...hand, cards: [...hand.cards, card] }],
+      }
+    })
     const dealerHoleCard = this.shoe.dealCard(false)
-    this.dealer = { cards: [...this.dealer.cards, dealerHoleCard], holeCardHidden: true }
+    this.dealer = {
+      ...this.dealer,
+      cards: [...this.dealer.cards, dealerHoleCard],
+    }
 
-    // Evaluate natural blackjacks for players
+    // Update hand statuses to 'active' or 'blackjack'
     this.seats = this.seats.map((seat) => {
       if (seat.hands.length === 0) return seat
       const hand = seat.hands[0]!
-      const val = evaluateHand(hand.cards, false)
-      if (val.isBlackjack) {
-        return {
-          ...seat,
-          hands: [{ ...hand, status: 'blackjack' }],
-        }
-      }
+      const val = evaluateHand(hand.cards)
+      const status = val.isBlackjack ? 'blackjack' : 'active'
       return {
         ...seat,
-        hands: [{ ...hand, status: 'active' }],
+        hands: [{ ...hand, status }],
       }
     })
-  }
 
-  private updateSeatHandCards(seatIndex: number, handIndex: number, cards: Card[]): void {
-    const seat = this.seats[seatIndex]!
-    const updatedHands = seat.hands.map((h, idx) => (idx === handIndex ? { ...h, cards } : h))
-    this.seats[seatIndex] = { ...seat, hands: updatedHands }
-  }
-
-  private evaluatePostDeal(): void {
-    const dealerUpcard = this.dealer.cards[0]!
-
+    // After deal: check insurance or dealer peek
     if (dealerUpcard.rank === 'A') {
-      // Dealer shows Ace: offer insurance to all active seats
-      this.phase = 'insurance'
-      this.insuranceSeatQueue = this.seats
-        .filter((s) => s.hands.length > 0)
-        .map((s) => s.index)
-      this.activeSeatIndex = this.insuranceSeatQueue[0] ?? -1
-      return
-    }
-
-    if (isTenValue(dealerUpcard.rank)) {
-      // Dealer shows 10/J/Q/K: peek for blackjack immediately
+      this.initiateInsurancePhase()
+    } else if (isTenValue(dealerUpcard.rank)) {
       this.phase = 'dealer_peek'
       this.resolveDealerPeek()
-      return
+    } else {
+      this.startPlayerTurns()
     }
-
-    // Dealer shows 2-9: no blackjack possible on dealer. Proceed directly to player turns
-    this.startPlayerTurns()
   }
 
-  /**
-   * Resolves dealer peek for blackjack.
-   * If dealer has BJ, reveals hole card, settles insurance, resolves round.
-   */
+  private initiateInsurancePhase(): void {
+    this.phase = 'insurance'
+    this.insuranceSeatQueue = this.seats
+      .filter((s) => s.hands.length > 0)
+      .map((s) => s.index)
+
+    if (this.insuranceSeatQueue.length > 0) {
+      this.activeSeatIndex = this.insuranceSeatQueue[0]!
+    } else {
+      this.phase = 'dealer_peek'
+      this.resolveDealerPeek()
+    }
+  }
+
   private resolveDealerPeek(): void {
     const dealerVal = evaluateHand(this.dealer.cards)
 
     if (dealerVal.isBlackjack) {
-      // Dealer has Blackjack! Reveal hole card and count it in Hi-Lo
-      const holeCard = this.dealer.cards[1]!
+      // Dealer has Blackjack! Reveal hole card immediately
       this.dealer = { ...this.dealer, holeCardHidden: false }
-      this.shoe.countVisibleCard(holeCard)
+      this.shoe.countVisibleCard(this.dealer.cards[1]!)
 
-      // Resolve insurance payouts (pays 2:1)
+      // Pay insurance 2:1 to insured players
       this.seats = this.seats.map((seat) => {
         if (seat.insuranceBet > 0) {
-          // 2:1 on insurance bet + original insurance bet returned = 3x insuranceBet
-          const insurancePayout = seat.insuranceBet * 3
+          const insurancePayout = seat.insuranceBet * 3 // Original bet + 2:1 win
           return {
             ...seat,
             bankroll: seat.bankroll + insurancePayout,
@@ -348,80 +305,57 @@ export class BlackjackTable {
         return seat
       })
 
-      // Resolve player hands against dealer natural blackjack
+      // Immediately resolve round
       this.resolveRound()
-      return
+    } else {
+      // Dealer does NOT have blackjack: forfeit insurance bets and proceed to player turns
+      this.seats = this.seats.map((seat) => ({ ...seat, insuranceBet: 0 }))
+      this.startPlayerTurns()
     }
-
-    // Dealer does NOT have blackjack. Hole card stays hidden.
-    // Proceed to player turns
-    this.startPlayerTurns()
   }
 
   private startPlayerTurns(): void {
     this.phase = 'player_turns'
     this.activeSeatIndex = -1
     this.activeHandIndex = 0
-
-    // Find first seat with an active hand that isn't already blackjack
     this.advanceToNextPlayableHand(0, 0)
   }
 
-  /**
-   * Advances activeSeatIndex and activeHandIndex to the next playable hand.
-   * If all player hands are completed, advances to dealer_turn.
-   */
-  private advanceToNextPlayableHand(startSeatIndex: number, startHandIndex: number): void {
-    for (let s = startSeatIndex; s < this.seats.length; s++) {
-      const seat = this.seats[s]!
-      const hands = seat.hands
-      const startH = s === startSeatIndex ? startHandIndex : 0
+  private advanceToNextPlayableHand(startSeatIdx: number, startHandIdx: number): void {
+    for (let sIdx = startSeatIdx; sIdx < this.seats.length; sIdx++) {
+      const seat = this.seats[sIdx]!
+      if (seat.hands.length === 0) continue
 
-      for (let h = startH; h < hands.length; h++) {
-        const hand = hands[h]!
+      const hStart = sIdx === startSeatIdx ? startHandIdx : 0
+      for (let hIdx = hStart; hIdx < seat.hands.length; hIdx++) {
+        const hand = seat.hands[hIdx]!
         if (hand.status === 'active') {
-          const val = evaluateHand(hand.cards, hand.fromSplit)
-          if (val.total === 21) {
-            // Automatically stand on 21
-            this.updateHandStatus(s, h, 'stood')
-            continue
-          }
-          this.activeSeatIndex = s
-          this.activeHandIndex = h
+          this.activeSeatIndex = sIdx
+          this.activeHandIndex = hIdx
+          this.seats[sIdx] = { ...seat, activeHandIndex: hIdx }
           return
         }
       }
     }
 
-    // No playable player hands remain: advance to dealer phase
+    // No more active player hands: advance to dealer turn
     this.phase = 'dealer_turn'
     this.activeSeatIndex = -1
-    this.advanceDealerTurn()
-  }
-
-  private updateHandStatus(
-    seatIndex: number,
-    handIndex: number,
-    status: PlayerHand['status'],
-    result: PlayerHand['result'] = 'pending',
-  ): void {
-    const seat = this.seats[seatIndex]!
-    const updatedHands = seat.hands.map((h, idx) =>
-      idx === handIndex ? { ...h, status, result } : h,
-    )
-    this.seats[seatIndex] = { ...seat, hands: updatedHands }
+    this.activeHandIndex = 0
   }
 
   /**
    * Returns current legal actions for the active hand.
    */
-  getLegalActions(
-    seatIndex: number = this.activeSeatIndex,
-    handIndex: number = this.activeHandIndex,
-  ): LegalActions {
+  getLegalActions(seatIndex?: number, handIndex?: number): LegalActions {
+    const sIdx = seatIndex ?? this.activeSeatIndex
+    const hIdx = handIndex ?? this.activeHandIndex
+
     if (this.phase === 'insurance') {
-      const seat = this.seats[seatIndex]
-      const canInsurance = seat ? seat.bankroll >= Math.floor(seat.currentBet / 2) : false
+      const seat = this.seats[sIdx]
+      if (!seat) return this.noLegalActions()
+      const insuranceCost = Math.floor(seat.currentBet / 2)
+      const canInsurance = seat.bankroll >= insuranceCost
       return {
         canHit: false,
         canStand: false,
@@ -432,83 +366,64 @@ export class BlackjackTable {
       }
     }
 
-    if (this.phase !== 'player_turns' || seatIndex < 0) {
-      return {
-        canHit: false,
-        canStand: false,
-        canDouble: false,
-        canSplit: false,
-        canSurrender: false,
-        canInsurance: false,
-      }
+    if (this.phase !== 'player_turns') {
+      return this.noLegalActions()
     }
 
-    const seat = this.seats[seatIndex]!
-    const hand = seat.hands[handIndex]
-    if (!hand || hand.status !== 'active') {
-      return {
-        canHit: false,
-        canStand: false,
-        canDouble: false,
-        canSplit: false,
-        canSurrender: false,
-        canInsurance: false,
-      }
-    }
+    const seat = this.seats[sIdx]
+    if (!seat) return this.noLegalActions()
+    const hand = seat.hands[hIdx]
+    if (!hand || hand.status !== 'active') return this.noLegalActions()
 
     const val = evaluateHand(hand.cards, hand.fromSplit)
-    const canHit = canHitHand(val)
-    const canStand = canStandHand(val)
-    const canDouble = canDoubleHand(
-      hand.cards,
-      seat.bankroll,
-      hand.bet,
-      this.rules,
-      hand.fromSplit,
-    )
-    const canSplit = canSplitHand(
-      hand.cards,
-      seat.bankroll,
-      hand.bet,
-      seat.hands.length,
-      this.rules,
-      hand.fromSplit,
-    )
-    const canSurrender = canSurrenderHand(hand.cards, this.rules, hand.fromSplit)
 
     return {
-      canHit,
-      canStand,
-      canDouble,
-      canSplit,
-      canSurrender,
+      canHit: canHitHand(val),
+      canStand: canStandHand(val),
+      canDouble: canDoubleHand(hand.cards, seat.bankroll, hand.bet, this.rules, hand.fromSplit),
+      canSplit: canSplitHand(
+        hand.cards,
+        seat.bankroll,
+        hand.bet,
+        seat.hands.length,
+        this.rules,
+        hand.fromSplit,
+      ),
+      canSurrender: canSurrenderHand(hand.cards, this.rules, hand.fromSplit),
+      canInsurance: false,
+    }
+  }
+
+  private noLegalActions(): LegalActions {
+    return {
+      canHit: false,
+      canStand: false,
+      canDouble: false,
+      canSplit: false,
+      canSurrender: false,
       canInsurance: false,
     }
   }
 
   /**
-   * Handles player action (hit, stand, double, split, surrender, insurance_yes, insurance_no).
+   * Applies an action to the active seat/hand.
    */
-  handleAction(action: ActionType, _amount?: number): void {
+  handleAction(action: ActionType): void {
     if (this.phase === 'insurance') {
       this.handleInsuranceAction(action)
       return
     }
 
     if (this.phase !== 'player_turns') {
-      throw new Error(`Cannot execute action ${action} in phase ${this.phase}`)
+      throw new Error(`Cannot perform action ${action} during ${this.phase} phase`)
     }
 
     const seatIdx = this.activeSeatIndex
     const handIdx = this.activeHandIndex
     const seat = this.seats[seatIdx]
-    if (!seat) {
-      throw new Error(`Invalid active seat ${seatIdx}`)
-    }
+    if (!seat) throw new Error(`Invalid active seat ${seatIdx}`)
     const hand = seat.hands[handIdx]
-    if (!hand) {
-      throw new Error(`Invalid active hand ${handIdx}`)
-    }
+    if (!hand) throw new Error(`Invalid active hand ${handIdx}`)
 
     const legal = this.getLegalActions(seatIdx, handIdx)
 
@@ -542,7 +457,10 @@ export class BlackjackTable {
 
       case 'stand': {
         if (!legal.canStand) throw new Error('Action stand is not legal')
-        this.updateHandStatus(seatIdx, handIdx, 'stood')
+        const updatedHands = seat.hands.map((h, i) =>
+          i === handIdx ? { ...h, status: 'stood' as const } : h,
+        )
+        this.seats[seatIdx] = { ...seat, hands: updatedHands }
         this.advanceToNextPlayableHand(seatIdx, handIdx + 1)
         break
       }
@@ -581,13 +499,10 @@ export class BlackjackTable {
         const card0 = hand.cards[0]!
         const card1 = hand.cards[1]!
 
-        // Deal 1 card to first hand, 1 card to second hand
         const newCard0 = this.shoe.dealCard(true)
         const newCard1 = this.shoe.dealCard(true)
 
         const isAcesSplit = card0.rank === 'A' || card1.rank === 'A'
-
-        // In standard blackjack, split Aces receive exactly 1 card and stand
         const hand0Status = isAcesSplit && !this.rules.resplitAces ? 'stood' : 'active'
         const hand1Status = isAcesSplit && !this.rules.resplitAces ? 'stood' : 'active'
 
@@ -611,7 +526,6 @@ export class BlackjackTable {
           fromSplit: true,
         }
 
-        // Replace split hand with the two new hands
         const updatedHands = [
           ...seat.hands.slice(0, handIdx),
           hand0,
@@ -661,67 +575,40 @@ export class BlackjackTable {
       }
     }
 
-    // Advance to next seat in insurance queue
     this.insuranceSeatQueue.shift()
     if (this.insuranceSeatQueue.length > 0) {
       this.activeSeatIndex = this.insuranceSeatQueue[0]!
     } else {
-      // All seats answered insurance: peek dealer hole card
       this.phase = 'dealer_peek'
       this.resolveDealerPeek()
     }
   }
 
   /**
-   * Dealer phase step: reveals hole card, counts in Hi-Lo, draws cards one-by-one until >= 17.
-   * Returns true when dealer turn is complete, false if more cards remain to draw.
+   * Advances the dealer turn one card at a time.
    */
   advanceDealerTurn(): boolean {
     this.phase = 'dealer_turn'
 
-    if (this.dealer.holeCardHidden && this.dealer.cards.length > 1) {
-      this.dealer = { ...this.dealer, holeCardHidden: false }
-      this.shoe.countVisibleCard(this.dealer.cards[1]!)
+    const allHandsBustedOrSurrendered = this.seats.every((seat) =>
+      seat.hands.every((h) => h.status === 'busted' || h.status === 'surrendered'),
+    )
 
-      // If all player hands busted or surrendered, dealer does not draw
-      const allHandsBustedOrSurrendered = this.seats.every((seat) =>
-        seat.hands.every((h) => h.status === 'busted' || h.status === 'surrendered'),
-      )
-      if (allHandsBustedOrSurrendered) {
-        return true
-      }
+    const result = stepDealerTurn(
+      this.dealer,
+      this.shoe,
+      this.rules,
+      allHandsBustedOrSurrendered,
+    )
 
-      const dealerVal = evaluateHand(this.dealer.cards)
-      const needsDraw =
-        dealerVal.total < 17 ||
-        (this.rules.dealerHitsSoft17 && dealerVal.total === 17 && dealerVal.isSoft)
-      return !needsDraw
-    }
-
-    // Dealer draws 1 card
-    let dealerVal = evaluateHand(this.dealer.cards)
-    if (
-      dealerVal.total < 17 ||
-      (this.rules.dealerHitsSoft17 && dealerVal.total === 17 && dealerVal.isSoft)
-    ) {
-      const card = this.shoe.dealCard(true)
-      this.dealer = { ...this.dealer, cards: [...this.dealer.cards, card] }
-      dealerVal = evaluateHand(this.dealer.cards)
-    }
-
-    const stillNeedsDraw =
-      dealerVal.total < 17 ||
-      (this.rules.dealerHitsSoft17 && dealerVal.total === 17 && dealerVal.isSoft)
-
-    return !stillNeedsDraw
+    this.dealer = result.dealer
+    return result.isTurnComplete
   }
 
   /**
-   * Resolves all payouts, compares player hands to dealer, updates bankrolls,
-   * checks cut card for reshuffle, and sets phase to 'round_over'.
+   * Resolves round payouts using the pure payouts engine.
    */
   resolveRound(): RoundResolution[] {
-    const dealerVal = evaluateHand(this.dealer.cards)
     const resolutions: RoundResolution[] = []
 
     this.seats = this.seats.map((seat) => {
@@ -730,79 +617,21 @@ export class BlackjackTable {
 
       for (let hIdx = 0; hIdx < seat.hands.length; hIdx++) {
         const hand = seat.hands[hIdx]!
-        const playerVal = evaluateHand(hand.cards, hand.fromSplit)
+        const { result, payout, netWin, summary } = evaluateHandPayout(
+          hand,
+          this.dealer.cards,
+          this.rules,
+        )
 
-        let result: PlayerHand['result'] = 'loss'
-        let payout = 0
-        let netWin = -hand.bet
-        let summary = ''
-
-        if (hand.status === 'surrendered') {
-          result = 'surrendered'
-          payout = hand.bet / 2
-          netWin = -hand.bet / 2
-          newBankroll += payout
-          summary = 'Surrendered (half bet returned)'
-        } else if (hand.status === 'busted') {
-          result = 'loss'
-          payout = 0
-          netWin = -hand.bet
-          summary = `Bust with ${playerVal.total}`
-        } else if (playerVal.isBlackjack) {
-          if (dealerVal.isBlackjack) {
-            result = 'push'
-            payout = hand.bet
-            netWin = 0
-            newBankroll += payout
-            summary = 'Natural Blackjack Push'
-          } else {
-            result = 'blackjack'
-            const win = hand.bet * this.rules.blackjackPayoutRatio
-            payout = hand.bet + win
-            netWin = win
-            newBankroll += payout
-            summary = `Natural Blackjack (3:2)`
-          }
-        } else if (dealerVal.isBlackjack) {
-          // Dealer has natural blackjack and player doesn't
-          result = 'loss'
-          payout = 0
-          netWin = -hand.bet
-          summary = 'Dealer Natural Blackjack'
-        } else if (dealerVal.isBust) {
-          // Dealer busted, player did not
-          result = 'win'
-          payout = hand.bet * 2
-          netWin = hand.bet
-          newBankroll += payout
-          summary = `Dealer busts (${dealerVal.total}), Win`
-        } else if (playerVal.total > dealerVal.total) {
-          result = 'win'
-          payout = hand.bet * 2
-          netWin = hand.bet
-          newBankroll += payout
-          summary = `Win (${playerVal.total} vs ${dealerVal.total})`
-        } else if (playerVal.total < dealerVal.total) {
-          result = 'loss'
-          payout = 0
-          netWin = -hand.bet
-          summary = `Loss (${playerVal.total} vs ${dealerVal.total})`
-        } else {
-          // Push
-          result = 'push'
-          payout = hand.bet
-          netWin = 0
-          newBankroll += payout
-          summary = `Push (${playerVal.total} vs ${dealerVal.total})`
-        }
+        newBankroll += payout
 
         resolutions.push({
           seatIndex: seat.index,
           handIndex: hIdx,
           result,
           netWin,
-          playerTotal: playerVal.total,
-          dealerTotal: dealerVal.total,
+          playerTotal: evaluateHand(hand.cards, hand.fromSplit).total,
+          dealerTotal: evaluateHand(this.dealer.cards).total,
           summary,
         })
 
@@ -834,7 +663,7 @@ export class BlackjackTable {
   }
 
   /**
-   * Reloads human player bankroll with VIP rebate/top-up.
+   * Reloads human player bankroll.
    */
   reloadHumanBankroll(amount: number = 500): void {
     const humanIdx = this.seats.findIndex((s) => s.isHuman)
@@ -848,7 +677,7 @@ export class BlackjackTable {
   }
 
   /**
-   * Returns the optimal Basic Strategy action for Trainer Mode.
+   * Returns optimal Basic Strategy action for Trainer Mode.
    */
   getOptimalAction(seatIndex: number = 1, handIndex: number = 0): ActionType | undefined {
     const seat = this.seats[seatIndex]
@@ -868,15 +697,12 @@ export class BlackjackTable {
   }
 
   /**
-   * Automatically executes the next AI step if the active seat is an AI companion.
-   * Returns true if an AI action was performed, false if waiting for human or round is not in playable phase.
+   * Steps the AI companion if active.
    */
   stepAI(): boolean {
     if (this.phase === 'insurance') {
       const seat = this.seats[this.activeSeatIndex]
-      if (!seat || seat.isHuman || !seat.profile) {
-        return false
-      }
+      if (!seat || seat.isHuman || !seat.profile) return false
       const takesInsurance = getAIInsuranceDecision(seat.profile, this.shoe.getTelemetry())
       this.handleAction(takesInsurance ? 'insurance_yes' : 'insurance_no')
       return true
@@ -884,9 +710,7 @@ export class BlackjackTable {
 
     if (this.phase === 'player_turns') {
       const seat = this.seats[this.activeSeatIndex]
-      if (!seat || seat.isHuman || !seat.profile) {
-        return false
-      }
+      if (!seat || seat.isHuman || !seat.profile) return false
       const hand = seat.hands[this.activeHandIndex]
       if (!hand) return false
 

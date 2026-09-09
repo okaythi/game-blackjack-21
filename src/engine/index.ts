@@ -4,10 +4,11 @@
 
 export * from './types'
 export * from './rules'
-export * from './companion-names'
 export * from './cards'
 export * from './hand'
+export * from './economy'
 export * from './state-machine'
+export * from './ai/profile'
 export * from './ai/cadence'
 export * from './ai/basic-strategy'
 export * from './ai/card-counter-ai'

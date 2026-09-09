@@ -14,7 +14,7 @@ export const blackjack21Plugin: GamePlugin = {
   scoring: {
     mode: 'points',
     hasValidScore: (score) => score !== null && score > 0,
-    formatScore: (score) => (score !== null && score !== undefined ? `$${score.toLocaleString()}` : '$0'),
+    formatScore: (score) => (score !== null && score !== undefined ? `€${score.toLocaleString()}` : '€0'),
   },
 }
 

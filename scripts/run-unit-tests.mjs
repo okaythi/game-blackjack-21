@@ -369,6 +369,59 @@ async function runAllTests() {
     assertEqual(shoe.currentRunningCount, 0, 'Running count resets to 0')
   }
 
+  // ----------------------------------------------------
+  // TEST SUITE 9: Casino Economy & First-Time Welcome Bonus
+  // ----------------------------------------------------
+  console.log('\n--- Suite 9: Casino Economy & Welcome Bonus Cash-Out ---')
+  {
+    const { candiesToEur, eurToCandies, calculateCashableChips } = await import('../src/engine/economy.ts')
+
+    // 3 Candies = 1 EUR
+    const conv1 = candiesToEur(151)
+    assertEqual(conv1.eur, 50, '151 candies converts to €50')
+    assertEqual(conv1.remainderCandies, 1, '151 candies has 1 remainder candy')
+    assertEqual(eurToCandies(50), 150, '€50 converts to 150 candies')
+
+    // User starts with €500 house bonus, €0 own deposit
+    const noDepositAt500 = calculateCashableChips({ depositedEur: 0, bonusEur: 500, currentChips: 500 })
+    assertEqual(noDepositAt500.cashableEur, 0, 'Cannot cash out pure €500 bonus at start')
+    assertEqual(noDepositAt500.candiesReturn, 0, '0 candies returned when at initial bonus')
+
+    const noDepositBelow500 = calculateCashableChips({ depositedEur: 0, bonusEur: 500, currentChips: 400 })
+    assertEqual(noDepositBelow500.cashableEur, 0, 'Cannot cash out below €500 when 0 own deposit')
+
+    // Only can cash out if they make 500 + 1 or more
+    const noDepositAt501 = calculateCashableChips({ depositedEur: 0, bonusEur: 500, currentChips: 501 })
+    assertEqual(noDepositAt501.cashableEur, 1, 'Making 500 + 1 allows cashing out €1')
+    assertEqual(noDepositAt501.candiesReturn, 3, '€1 profit returns 3 candies')
+
+    const noDepositAt700 = calculateCashableChips({ depositedEur: 0, bonusEur: 500, currentChips: 700 })
+    assertEqual(noDepositAt700.cashableEur, 200, 'Reaching €700 allows cashing out €200 profit')
+    assertEqual(noDepositAt700.candiesReturn, 600, '€200 profit returns 600 candies')
+
+    // User deposited €50 (150 candies) + €500 bonus = €550 total
+    const depositedAt550 = calculateCashableChips({ depositedEur: 50, bonusEur: 500, currentChips: 550 })
+    assertEqual(depositedAt550.cashableEur, 50, '€50 own deposit is 100% cashable at start')
+    assertEqual(depositedAt550.candiesReturn, 150, 'Returns full 150 candies at start')
+
+    // User bets and bankroll drops below 500 to €440: proportionately cashed out
+    // 440 * (50 / 550) = 440 * (1/11) = 40
+    const depositedAt440 = calculateCashableChips({ depositedEur: 50, bonusEur: 500, currentChips: 440 })
+    assertEqual(depositedAt440.cashableEur, 40, '€440 remaining proportionately cashes out €40 (1/11th)')
+    assertEqual(depositedAt440.candiesReturn, 120, '€40 cashout returns 120 candies')
+
+    // User profits: €50 own deposit + €500 bonus (€550 initial), chips reach €600 (€50 profit)
+    // cashable = safeChips - bonusEur = 600 - 500 = €100 (€50 deposit + €50 profit)
+    const depositedAt600 = calculateCashableChips({ depositedEur: 50, bonusEur: 500, currentChips: 600 })
+    assertEqual(depositedAt600.cashableEur, 100, '€600 total cashes out €50 deposit + €50 profit = €100')
+    assertEqual(depositedAt600.candiesReturn, 300, '€100 cashout returns 300 candies')
+
+    // At €650 total (€100 profit): cashable = 650 - 500 = €150
+    const depositedAt650 = calculateCashableChips({ depositedEur: 50, bonusEur: 500, currentChips: 650 })
+    assertEqual(depositedAt650.cashableEur, 150, '€650 total cashes out €50 deposit + €100 profit = €150')
+    assertEqual(depositedAt650.candiesReturn, 450, '€150 cashout returns 450 candies')
+  }
+
   console.log('\n====================================================')
   console.log(`  ALL TESTS PASSED! (${passedTests}/${totalTests} assertions)`)
   console.log('====================================================\n')

@@ -70,6 +70,8 @@ export interface DealerHand {
   readonly holeCardHidden: boolean
 }
 
+export type DealerState = DealerHand
+
 export type DifficultyTier = 'easy' | 'normal' | 'expert'
 
 export type ChipDenomination =
@@ -101,8 +103,9 @@ export interface TableRules {
 export interface AIProfile {
   readonly id: string
   readonly name: string
-  readonly flag: string
+  readonly code: string
   readonly country: string
+  readonly flag?: string
   readonly spectrumLevel: number // 0.0 (novice) to 1.0 (master card counter)
   readonly baseMinBet: number
   readonly countSensitivity: number // True Count betting multiplier

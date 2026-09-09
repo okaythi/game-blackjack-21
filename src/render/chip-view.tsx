@@ -11,7 +11,7 @@ export interface ChipTheme {
 
 export const CHIP_THEMES: Record<ChipDenomination, ChipTheme> = {
   1: {
-    label: '$1',
+    label: '€1',
     bg: '#f8fafc',
     text: '#1e293b',
     edgeStripe: '#94a3b8',
@@ -19,7 +19,7 @@ export const CHIP_THEMES: Record<ChipDenomination, ChipTheme> = {
     innerRing: '#e2e8f0',
   },
   2.5: {
-    label: '$2.50',
+    label: '€2.50',
     bg: '#fb7185',
     text: '#ffffff',
     edgeStripe: '#ffffff',
@@ -27,7 +27,7 @@ export const CHIP_THEMES: Record<ChipDenomination, ChipTheme> = {
     innerRing: '#fda4af',
   },
   5: {
-    label: '$5',
+    label: '€5',
     bg: '#dc2626',
     text: '#ffffff',
     edgeStripe: '#ffffff',
@@ -35,7 +35,7 @@ export const CHIP_THEMES: Record<ChipDenomination, ChipTheme> = {
     innerRing: '#f87171',
   },
   10: {
-    label: '$10',
+    label: '€10',
     bg: '#2563eb', // Original casino blue for dimes
     text: '#ffffff',
     edgeStripe: '#ffffff',
@@ -43,7 +43,7 @@ export const CHIP_THEMES: Record<ChipDenomination, ChipTheme> = {
     innerRing: '#60a5fa',
   },
   25: {
-    label: '$25',
+    label: '€25',
     bg: '#16a34a',
     text: '#ffffff',
     edgeStripe: '#fef08a',
@@ -51,7 +51,7 @@ export const CHIP_THEMES: Record<ChipDenomination, ChipTheme> = {
     innerRing: '#4ade80',
   },
   100: {
-    label: '$100',
+    label: '€100',
     bg: '#18181b',
     text: '#fef08a',
     edgeStripe: '#f59e0b',
@@ -59,7 +59,7 @@ export const CHIP_THEMES: Record<ChipDenomination, ChipTheme> = {
     innerRing: '#d97706',
   },
   500: {
-    label: '$500',
+    label: '€500',
     bg: '#7c3aed',
     text: '#ffffff',
     edgeStripe: '#ffffff',
@@ -67,7 +67,7 @@ export const CHIP_THEMES: Record<ChipDenomination, ChipTheme> = {
     innerRing: '#a78bfa',
   },
   1000: {
-    label: '$1K',
+    label: '€1K',
     bg: '#eab308',
     text: '#18181b',
     edgeStripe: '#78350f',
@@ -75,7 +75,7 @@ export const CHIP_THEMES: Record<ChipDenomination, ChipTheme> = {
     innerRing: '#fde047',
   },
   2000: {
-    label: '$2K',
+    label: '€2K',
     bg: '#94a3b8',
     text: '#0f172a',
     edgeStripe: '#334155',
@@ -83,7 +83,7 @@ export const CHIP_THEMES: Record<ChipDenomination, ChipTheme> = {
     innerRing: '#e2e8f0',
   },
   5000: {
-    label: '$5K',
+    label: '€5K',
     bg: '#881337', // Cranberry
     text: '#fef08a',
     edgeStripe: '#fef08a',
