@@ -1,0 +1,26 @@
+{
+  "name": "@nixlabs-games/blackjack-21",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Blackjack 21 minigame for Nixlabs Arcade",
+  "main": "./src/plugin.ts",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@nixlabs/game-core": ">=0.1.0",
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@nixlabs/game-core": "file:../minigames/packages/game-core",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.5"
+  }
+}
