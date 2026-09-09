@@ -1,4 +1,3 @@
-import React from 'react'
 import type { Card, Suit } from '../engine/types'
 
 interface CardProps {

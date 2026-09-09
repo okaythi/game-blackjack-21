@@ -1,4 +1,4 @@
-import type { SfxCatalog, SoundDesign } from '@nixlabs/game-core'
+import type { SfxCatalog } from '@nixlabs/game-core'
 
 export type BlackjackSfxName =
   | 'card_slide'

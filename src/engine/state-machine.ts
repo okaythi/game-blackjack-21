@@ -22,7 +22,6 @@ import { getBasicStrategyAction } from './ai/basic-strategy'
 import { getRulesForDifficulty } from './rules'
 import type {
   ActionType,
-  AIProfile,
   Card,
   DealerHand,
   DifficultyTier,
@@ -33,7 +32,6 @@ import type {
   Seat,
   TableRules,
   TableState,
-  TableTelemetry,
 } from './types'
 
 export interface TableConfig {

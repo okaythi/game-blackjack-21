@@ -1,4 +1,3 @@
-import React from 'react'
 import type { ChipDenomination } from '../engine/types'
 
 export interface ChipTheme {
@@ -111,7 +110,6 @@ export function Chip({
   onClick,
 }: ChipProps) {
   const theme = CHIP_THEMES[denomination]
-  const radius = size / 2
 
   return (
     <button

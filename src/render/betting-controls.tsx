@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import { useEffect } from 'react'
 import type { ChipDenomination } from '../engine/types'
 import { Chip } from './chip-view'
 

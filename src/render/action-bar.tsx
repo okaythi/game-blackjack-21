@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import { useEffect } from 'react'
 import type { ActionType, LegalActions } from '../engine/types'
 
 interface ActionBarProps {

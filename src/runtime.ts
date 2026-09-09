@@ -5,7 +5,6 @@ import {
   type GameRuntimeDeps,
   type GameSnapshot,
 } from '@nixlabs/game-core'
-import { blackjack21Manifest } from './manifest'
 
 export function createBlackjackRuntime(deps: { readonly current: GameRuntimeDeps }): GameRuntime {
   let bankroll = 1000

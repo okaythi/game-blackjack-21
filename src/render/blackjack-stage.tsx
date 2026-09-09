@@ -1,11 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   ActionType,
   ChipDenomination,
   DifficultyTier,
   LegalActions,
-  RoundResolution,
-  TableRules,
   TableState,
 } from '../engine/types'
 import { BlackjackTable } from '../engine/state-machine'
@@ -26,7 +24,7 @@ export interface BlackjackStageProps {
 
 export function BlackjackStage({
   initialBankroll = 1000,
-  initialCandy = 0,
+  initialCandy: _initialCandy = 0,
   onBankCandy,
   onRecordHighscore,
   onUnlockAchievement,
@@ -142,7 +140,7 @@ export function BlackjackStage({
   // Pacing Loop: automated step dispatcher for dealing, AI turns, and dealer draw
   useEffect(() => {
     const table = tableRef.current
-    if (!table) return
+    if (!table) return undefined
 
     const { phase, activeSeatIndex, seats } = tableState
 
@@ -183,7 +181,6 @@ export function BlackjackStage({
         playSound('card_flip')
         refreshState()
         if (isDone) {
-          // Trigger resolution after short pause
           setTimeout(() => {
             const resolutions = table.resolveRound()
             refreshState()
@@ -195,9 +192,11 @@ export function BlackjackStage({
                 playSound('blackjack')
                 onUnlockAchievement?.('blackjack-21_natural_21')
                 setHumanStreak((s) => s + 1)
+                onBankCandy?.(Math.round(humanRes.netWin / 10))
               } else if (humanRes.result === 'win') {
                 playSound('win_chime')
                 setHumanStreak((s) => s + 1)
+                onBankCandy?.(Math.round(humanRes.netWin / 10))
               } else if (humanRes.result === 'loss') {
                 playSound('bust')
                 setHumanStreak(0)
@@ -215,7 +214,9 @@ export function BlackjackStage({
       }, delay)
       return () => clearTimeout(timer)
     }
-  }, [tableState, difficulty, isTurbo, humanStreak, playSound, refreshState, onUnlockAchievement])
+
+    return undefined
+  }, [tableState, difficulty, isTurbo, humanStreak, playSound, refreshState, onUnlockAchievement, onBankCandy])
 
   // DEAL button handler
   const handleDeal = useCallback(() => {
@@ -237,6 +238,13 @@ export function BlackjackStage({
   const handleHumanAction = useCallback((action: ActionType) => {
     const table = tableRef.current
     if (!table) return
+
+    const optimal = table.getOptimalAction(1)
+    if (optimal && action !== optimal && action !== 'stand') {
+      setLastMistake(`Basic Strategy recommends ${optimal.toUpperCase()} here.`)
+    } else {
+      setLastMistake(null)
+    }
 
     playSound(action === 'hit' ? 'card_slide' : action === 'double' ? 'chip_bet' : 'ui_click')
     table.handleAction(action)

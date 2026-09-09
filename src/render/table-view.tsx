@@ -1,7 +1,5 @@
-import React from 'react'
-import type { DifficultyTier, Seat, TableRules, TableState } from '../engine/types'
+import type { DifficultyTier, TableState } from '../engine/types'
 import { CardView } from './card-view'
-import { Chip } from './chip-view'
 import { evaluateHand } from '../engine/hand'
 
 interface TableViewProps {
